@@ -107,6 +107,14 @@ body {
   flex: 0 0 auto;
 }
 
+.repo-preview {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 10px;
+}
+
 /* ---- バナー / プレースホルダ ---- */
 
 .banner {

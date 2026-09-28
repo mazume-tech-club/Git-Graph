@@ -11,6 +11,10 @@ services:
     build:
       context: ./docker
     working_dir: /app
+    # ブラウザで見るときに使う（docker compose run --service-ports ... で公開される）。
+    # ホスト側で vite を動かしていても衝突しないよう、ホスト側は 1430 にずらしている。
+    ports:
+      - "1430:1420"
     volumes:
       - .:/app
       # 以下はコンテナ専用。ホストの node_modules（Windows 向けバイナリ）や

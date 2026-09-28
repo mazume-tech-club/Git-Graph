@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+
+import {
+  isBrowserPreview,
+  listCommits,
+  openRepository,
+  pickRepository,
+  startupRepository,
+} from "./api";
 
 import { CommitDetail } from "./components/CommitDetail";
 import { CommitList } from "./components/CommitList";
@@ -23,11 +29,8 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      const info = await invoke<RepoInfo>("open_repository", { path });
-      const list = await invoke<Commit[]>("list_commits", {
-        path: info.path,
-        limit: COMMIT_LIMIT,
-      });
+      const info = await openRepository(path);
+      const list = await listCommits(info.path, COMMIT_LIMIT);
       setRepo(info);
       setCommits(list);
       setSelectedId(list.length > 0 ? list[0].id : null);
@@ -49,7 +52,7 @@ function App() {
   // 起動時引数のリポジトリを開く。無ければ前回開いたものを復元する
   useEffect(() => {
     void (async () => {
-      const fromArgs = await invoke<string | null>("startup_repository").catch(() => null);
+      const fromArgs = await startupRepository().catch(() => null);
       if (fromArgs) {
         await load(fromArgs);
         return;
@@ -60,9 +63,9 @@ function App() {
   }, [load]);
 
   const chooseRepo = useCallback(async () => {
-    const selected = await open({ directory: true, multiple: false, title: "リポジトリを選択" });
-    if (typeof selected === "string") await load(selected);
-  }, [load]);
+    const selected = await pickRepository(repo?.path ?? null);
+    if (selected) await load(selected);
+  }, [load, repo]);
 
   const graph = useMemo(() => buildGraph(commits), [commits]);
   const selected = useMemo(
@@ -92,6 +95,7 @@ function App() {
             <span className="repo-branch">
               {repo.isDetached ? "detached HEAD" : (repo.headBranch ?? "-")}
             </span>
+            {isBrowserPreview() && <span className="repo-preview">ブラウザプレビュー</span>}
             <span className="repo-count">
               {commits.length}
               {commits.length >= COMMIT_LIMIT ? `+ (上限 ${COMMIT_LIMIT})` : ""} commits

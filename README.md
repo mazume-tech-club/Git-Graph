@@ -46,6 +46,28 @@ docker compose run --rm -v C:/path/to/repo:/repos/target:ro dev   bash scripts/s
 アプリは第 1 引数にリポジトリのパスを取る（`git-graph <path>`）。
 指定が無ければ前回開いたリポジトリを復元する。
 
+### ブラウザでの表示確認
+
+Tauri を起動しなくても、ブラウザだけで UI を確認できる。Vite の開発サーバに
+Tauri コマンドと同じ JSON を返す API（`scripts/dev-git-api.mjs`）を組み込んであり、
+`src/api.ts` が Tauri と自動で切り替える。ホットリロードが効くので UI の調整が速い。
+
+```bash
+# コンテナで開発サーバを起動し、ホストの http://localhost:1430 で見る
+docker compose run --rm --service-ports -e GIT_GRAPH_REPO=/tmp/demo dev   bash -c 'bash scripts/demo-repo.sh /tmp/demo && npm run dev:browser'
+
+# ブラウザも用意できないときは、コンテナ内の WebKit で開いて撮る
+docker compose run --rm dev bash -c   'bash scripts/demo-repo.sh /tmp/demo && bash scripts/screenshot-browser.sh /tmp/demo'
+```
+
+ホストで直接動かす場合は `GIT_GRAPH_REPO=C:/path/to/repo npm run dev` で
+http://localhost:1420 を開く。開くリポジトリは環境変数 `GIT_GRAPH_REPO` か、
+画面の「リポジトリを開く」（ブラウザではパス入力）で指定する。
+
+ブラウザプレビューの Git 読み取りは `git` コマンドを呼ぶ簡易版で、コミットの
+並び順が Tauri 版（libgit2）と細かく異なる。**仕様の正は Rust 側**にあるので、
+表示が食い違ったら Rust 側の結果を信じること。
+
 ### 制限
 
 コンテナは Linux なので、**Windows 向けの実行ファイルは作れない**。
@@ -83,7 +105,10 @@ SHOW_GRAPH=1 node scripts/check-lanes.mjs ../some-repo
 | `src/components/CommitDetail.tsx` | 選択したコミットの詳細 |
 | `scripts/check-lanes.mjs` | レーン配置の検証スクリプト |
 | `scripts/screenshot.sh` | 仮想ディスプレイ上で起動してスクリーンショットを撮る |
+| `scripts/screenshot-browser.sh` | ブラウザプレビューを WebKit で開いて撮る |
 | `scripts/demo-repo.sh` | 表示確認用のデモリポジトリを作る |
+| `scripts/dev-git-api.mjs` | ブラウザプレビュー用の開発 API（`git` を呼ぶ簡易版） |
+| `src/api.ts` | Tauri とブラウザプレビューの呼び分け |
 | `docker/Dockerfile` | Rust + Node + Tauri の依存を入れた開発用イメージ |
 | `compose.yml` | 開発コンテナの定義 |
 

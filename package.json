@@ -12,7 +12,8 @@
     "rust:check": "cargo check --manifest-path src-tauri/Cargo.toml",
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
-    "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml"
+    "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "dev:browser": "vite --host 0.0.0.0"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
