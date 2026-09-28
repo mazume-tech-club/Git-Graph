@@ -14,6 +14,9 @@ Docker があれば、ホストに Rust / Node を入れなくてもビルドで
 
 ## 開発（Docker）
 
+コマンドは 1 行で書いてある。PowerShell では `\` が行継続にならないので、
+改行して貼り付けるとそのまま失敗する（継続したいときはバッククォートを使う）。
+
 ```bash
 docker compose build                            # イメージの作成（初回のみ）
 docker compose run --rm dev npm ci              # 依存の取得（初回のみ）
@@ -34,10 +37,10 @@ docker compose run --rm dev bash                # コンテナ内のシェル
 
 ```bash
 # 確認用のデモリポジトリ（ブランチ・マージ・タグ入り）を作ってから撮る
-docker compose run --rm dev bash -c   'bash scripts/demo-repo.sh /tmp/demo && bash scripts/screenshot.sh /tmp/demo /app/screenshot.png'
+docker compose run --rm dev bash -c 'bash scripts/demo-repo.sh /tmp/demo && bash scripts/screenshot.sh /tmp/demo /app/screenshot.png'
 
 # 手元のリポジトリを見たいとき（ホストのパスをマウントする）
-docker compose run --rm -v C:/path/to/repo:/repos/target:ro dev   bash scripts/screenshot.sh /repos/target /app/screenshot.png
+docker compose run --rm -v C:/path/to/repo:/repos/target:ro dev bash scripts/screenshot.sh /repos/target /app/screenshot.png
 ```
 
 バインドマウント経由のリポジトリは読み込みに時間がかかる。撮影前の待ち時間は
@@ -53,11 +56,12 @@ Tauri コマンドと同じ JSON を返す API（`scripts/dev-git-api.mjs`）を
 `src/api.ts` が Tauri と自動で切り替える。ホットリロードが効くので UI の調整が速い。
 
 ```bash
-# コンテナで開発サーバを起動し、ホストの http://localhost:1430 で見る
-docker compose run --rm --service-ports -e GIT_GRAPH_REPO=/tmp/demo dev   bash -c 'bash scripts/demo-repo.sh /tmp/demo && npm run dev:browser'
+# コンテナで開発サーバを起動する。ホスト側の http://localhost:1430 を開く
+# （コンテナ内は 1420。止めるときは Ctrl+C）
+docker compose run --rm --service-ports -e GIT_GRAPH_REPO=/tmp/demo dev bash -c 'bash scripts/demo-repo.sh /tmp/demo && npm run dev:browser'
 
 # ブラウザも用意できないときは、コンテナ内の WebKit で開いて撮る
-docker compose run --rm dev bash -c   'bash scripts/demo-repo.sh /tmp/demo && bash scripts/screenshot-browser.sh /tmp/demo'
+docker compose run --rm dev bash -c 'bash scripts/demo-repo.sh /tmp/demo && bash scripts/screenshot-browser.sh /tmp/demo'
 ```
 
 ホストで直接動かす場合は `GIT_GRAPH_REPO=C:/path/to/repo npm run dev` で
