@@ -27,6 +27,27 @@ docker compose run --rm dev bash                # コンテナ内のシェル
 ホスト側の `node_modules`（Windows 向けバイナリ）と混ざらないので、
 ホストとコンテナを併用しても壊れない。
 
+### GUI の表示確認
+
+コンテナには GUI が無いが、仮想ディスプレイ（Xvfb）上で起動してスクリーンショットを
+撮れる。ホストに Rust を入れなくても表示を確認できる。
+
+```bash
+# 確認用のデモリポジトリ（ブランチ・マージ・タグ入り）を作ってから撮る
+docker compose run --rm dev bash -c   'bash scripts/demo-repo.sh /tmp/demo && bash scripts/screenshot.sh /tmp/demo /app/screenshot.png'
+
+# 手元のリポジトリを見たいとき（ホストのパスをマウントする）
+docker compose run --rm -v C:/path/to/repo:/repos/target:ro dev   bash scripts/screenshot.sh /repos/target /app/screenshot.png
+```
+
+バインドマウント経由のリポジトリは読み込みに時間がかかる。撮影前の待ち時間は
+`WAIT_SECONDS`（既定 12 秒）で延ばせる。
+
+アプリは第 1 引数にリポジトリのパスを取る（`git-graph <path>`）。
+指定が無ければ前回開いたリポジトリを復元する。
+
+### 制限
+
 コンテナは Linux なので、**Windows 向けの実行ファイルは作れない**。
 `docker compose run --rm dev npx tauri build` で作れるのは Linux 版（deb / AppImage）。
 Windows の `.exe` / インストーラが要るときは、ホストに Rust を入れて
@@ -61,6 +82,8 @@ SHOW_GRAPH=1 node scripts/check-lanes.mjs ../some-repo
 | `src/components/CommitList.tsx` | グラフ + コミット一覧の行 |
 | `src/components/CommitDetail.tsx` | 選択したコミットの詳細 |
 | `scripts/check-lanes.mjs` | レーン配置の検証スクリプト |
+| `scripts/screenshot.sh` | 仮想ディスプレイ上で起動してスクリーンショットを撮る |
+| `scripts/demo-repo.sh` | 表示確認用のデモリポジトリを作る |
 | `docker/Dockerfile` | Rust + Node + Tauri の依存を入れた開発用イメージ |
 | `compose.yml` | 開発コンテナの定義 |
 

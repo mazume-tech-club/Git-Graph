@@ -46,10 +46,17 @@ function App() {
     }
   }, []);
 
-  // 前回開いたリポジトリを復元する
+  // 起動時引数のリポジトリを開く。無ければ前回開いたものを復元する
   useEffect(() => {
-    const last = localStorage.getItem(LAST_REPO_KEY);
-    if (last) void load(last, true);
+    void (async () => {
+      const fromArgs = await invoke<string | null>("startup_repository").catch(() => null);
+      if (fromArgs) {
+        await load(fromArgs);
+        return;
+      }
+      const last = localStorage.getItem(LAST_REPO_KEY);
+      if (last) await load(last, true);
+    })();
   }, [load]);
 
   const chooseRepo = useCallback(async () => {

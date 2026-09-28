@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "git-graph",
+  "productName": "Git Graph",
   "version": "0.1.0",
   "identifier": "com.example.gitgraph",
   "build": {
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "git-graph",
-        "width": 800,
-        "height": 600
+        "title": "Git Graph",
+        "width": 1100,
+        "height": 700,
+        "minWidth": 700,
+        "minHeight": 400
       }
     ],
     "security": {

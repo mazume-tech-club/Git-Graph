@@ -18,12 +18,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libxdo-dev \
       pkg-config \
       wget \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
+
+# 仮想ディスプレイ上で GUI を起動してスクリーンショットを撮るためのツール一式。
+# 日本語フォントが無いと UI が豆腐になるので合わせて入れる。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      dbus-x11 \
+      fonts-ipafont-gothic \
+      imagemagick \
+      x11-utils \
+      xauth \
+      xvfb \
+ && rm -rf /var/lib/apt/lists/*
 
 # Node.js（NodeSource）
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/*
 
 # lint / フォーマット確認用
 RUN rustup component add clippy rustfmt
