@@ -1,0 +1,323 @@
+:root {
+  --bg: #1b1d23;
+  --bg-elevated: #22252d;
+  --bg-hover: #2a2e38;
+  --bg-selected: #33394a;
+  --border: #343945;
+  --fg: #e6e8ee;
+  --fg-muted: #9aa1b1;
+  --accent: #4c8dff;
+
+  font-family: "Segoe UI", "Yu Gothic UI", system-ui, sans-serif;
+  font-size: 13px;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --bg-elevated: #f5f6f8;
+    --bg-hover: #eef0f4;
+    --bg-selected: #dce7ff;
+    --border: #d8dce4;
+    --fg: #1d2129;
+    --fg-muted: #6b7280;
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---- ツールバー ---- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.toolbar button {
+  padding: 4px 12px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.repo-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-left: 4px;
+  color: var(--fg-muted);
+}
+
+.repo-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-branch {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+}
+
+.repo-count {
+  flex: 0 0 auto;
+}
+
+/* ---- バナー / プレースホルダ ---- */
+
+.banner {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.banner.error {
+  color: #ffb4b4;
+  background: #45272b;
+}
+
+.placeholder {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+}
+
+/* ---- 本体 ---- */
+
+.content {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.commit-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+}
+
+.sidebar {
+  flex: 0 0 320px;
+  overflow: auto;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border);
+}
+
+/* ---- コミット行 ---- */
+
+.commit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 12px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.commit-row:hover {
+  background: var(--bg-hover);
+}
+
+.commit-row.selected {
+  background: var(--bg-selected);
+}
+
+.commit-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.commit-graph {
+  flex: 0 0 auto;
+  align-self: stretch;
+}
+
+.graph-cell {
+  display: block;
+}
+
+.commit-summary {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.summary-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commit-author,
+.commit-date,
+.commit-hash {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+
+.commit-author {
+  width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commit-date {
+  width: 118px;
+}
+
+.commit-hash,
+.mono {
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+/* ---- ref バッジ ---- */
+
+.ref-badge {
+  flex: 0 0 auto;
+  max-width: 180px;
+  padding: 0 6px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.ref-head {
+  color: #fff;
+  background: #4c8dff;
+}
+
+.ref-localBranch {
+  color: #31c48d;
+  border-color: #31c48d;
+}
+
+.ref-remoteBranch {
+  color: #a78bfa;
+  border-color: #a78bfa;
+}
+
+.ref-tag {
+  color: #f6a609;
+  border-color: #f6a609;
+}
+
+/* ---- 詳細ペイン ---- */
+
+.detail {
+  padding: 14px;
+}
+
+.detail.empty {
+  color: var(--fg-muted);
+}
+
+.detail-summary {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.detail-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.detail-meta {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 4px 8px;
+  margin: 0;
+}
+
+.detail-meta dt {
+  color: var(--fg-muted);
+}
+
+.detail-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--fg-muted);
+}
+
+.parent-link {
+  padding: 0 4px;
+  margin-right: 4px;
+  font: inherit;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.parent-link:hover {
+  text-decoration: underline;
+}
+
+.detail-body {
+  padding: 8px;
+  margin: 12px 0 0;
+  overflow-x: auto;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  white-space: pre-wrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}

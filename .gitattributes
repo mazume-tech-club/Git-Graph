@@ -1,0 +1,8 @@
+# Windows ホストと Linux コンテナを行き来するので、作業ツリーの改行は LF に揃える。
+* text=auto eol=lf
+
+# バイナリ
+*.png binary
+*.ico binary
+*.icns binary
+*.svg text eol=lf

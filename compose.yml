@@ -1,0 +1,26 @@
+# ホストに Rust / Node を入れずにビルドするための開発コンテナ。
+#
+#   docker compose build                         # イメージの作成（初回のみ）
+#   docker compose run --rm dev npm ci           # 依存の取得（初回のみ）
+#   docker compose run --rm dev npm run build    # フロントエンドのビルド
+#   docker compose run --rm dev npm run rust:check   # Rust のコンパイルチェック
+#   docker compose run --rm dev bash             # コンテナ内のシェル
+#
+services:
+  dev:
+    build:
+      context: ./docker
+    working_dir: /app
+    volumes:
+      - .:/app
+      # 以下はコンテナ専用。ホストの node_modules（Windows 向けバイナリ）や
+      # ビルド成果物と混ざらないよう名前付きボリュームに逃がす
+      - node_modules:/app/node_modules
+      - cargo_target:/app/src-tauri/target
+      - cargo_registry:/usr/local/cargo/registry
+    init: true
+
+volumes:
+  node_modules:
+  cargo_target:
+  cargo_registry:
