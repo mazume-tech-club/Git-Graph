@@ -97,6 +97,52 @@ npm run tauri build   # 配布用ビルド
 SHOW_GRAPH=1 node scripts/check-lanes.mjs ../some-repo
 ```
 
+## Windows 用 exe を作る
+
+コンテナは Linux なので exe は作れない。ホストに Rust と MSVC ビルドツールを入れる。
+WebView2 ランタイムは Windows 11 に同梱されているので追加導入は不要。
+
+### 1. ツールチェーンを入れる（初回のみ）
+
+```powershell
+winget install --id Rustlang.Rustup -e
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended"
+```
+
+入れ終わったらターミナルを開き直す（PATH を反映させるため）。
+`rustup --version` と `cargo --version` が通れば準備完了。
+
+### 2. ビルドする
+
+```powershell
+npm install
+npm run tauri build
+```
+
+`npm install` はホスト側の `node_modules` を作る（コンテナ側とは別物なので両方必要）。
+
+### 3. 出力
+
+| パス | 内容 |
+|------|------|
+| `src-tauri/target/release/git-graph.exe` | 単体の実行ファイル |
+| `src-tauri/target/release/bundle/nsis/*.exe` | インストーラ |
+| `src-tauri/target/release/bundle/msi/*.msi` | MSI パッケージ |
+
+単体 exe は WebView2 ランタイムがある環境ならコピーするだけで動く。
+MSI のビルドで失敗する場合は NSIS だけに絞れる。
+
+```powershell
+npm run tauri build -- --bundles nsis
+```
+
+初回ビルドは Rust の依存を全てコンパイルするので 10 分前後かかる。
+2 回目以降はインクリメンタルで数十秒になる。
+
+なお、リリースプロファイル（LTO・`panic = "abort"`）でのコンパイルと
+`tauri build` のパイプラインは Linux コンテナで検証済み。ホストで失敗する場合は
+ツールチェーン側の問題を疑うとよい。
+
 ## 構成
 
 | パス | 役割 |
