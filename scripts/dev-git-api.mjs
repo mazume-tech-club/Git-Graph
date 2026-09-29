@@ -107,6 +107,44 @@ export function listCommits(path, limit) {
     });
 }
 
+/**
+ * `branch.<name>.description` を一括で読む。
+ * ブランチ名にドットが入っていてもよいよう、前後の固定部分だけを切り落とす。
+ */
+function branchDescriptions(repo) {
+  const map = new Map();
+  let raw;
+  try {
+    raw = git(repo, ["config", "--list"]);
+  } catch {
+    return map;
+  }
+  const PREFIX = "branch.";
+  const SUFFIX = ".description";
+  for (const line of raw.split("\n")) {
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const key = line.slice(0, eq);
+    if (!key.startsWith(PREFIX) || !key.endsWith(SUFFIX)) continue;
+    const name = key.slice(PREFIX.length, key.length - SUFFIX.length);
+    const value = line.slice(eq + 1).trim();
+    if (name !== "" && value !== "") map.set(name, value);
+  }
+  return map;
+}
+
+/** コミット ID からメッセージ 1 行目と時刻を取る */
+function commitHeadline(repo, oid) {
+  if (!oid) return { summary: null, time: null };
+  try {
+    const raw = git(repo, ["show", "-s", `--format=%s${UNIT}%ct`, oid]).trim();
+    const [summary, time] = raw.split(UNIT);
+    return { summary: summary ?? null, time: time ? Number(time) : null };
+  } catch {
+    return { summary: null, time: null };
+  }
+}
+
 /** `git worktree list --porcelain` を解析する */
 export function listWorktrees(path) {
   const info = repoInfo(path);
@@ -149,8 +187,13 @@ export function listWorktrees(path) {
   }
   flush();
 
+  const descriptions = branchDescriptions(info.path);
   for (const wt of list) {
     wt.name = wt.isMain ? "(main)" : (wt.path.split(/[\/]/).filter(Boolean).pop() ?? wt.path);
+    wt.description = wt.branch ? (descriptions.get(wt.branch) ?? null) : null;
+    const head = commitHeadline(info.path, wt.head);
+    wt.headSummary = head.summary;
+    wt.headTime = head.time;
   }
   return list;
 }
@@ -164,6 +207,7 @@ export function listBranches(path) {
   for (const wt of listWorktrees(info.path)) {
     if (wt.branch) byBranch.set(wt.branch, wt.path);
   }
+  const descriptions = branchDescriptions(info.path);
 
   const format = [
     "%(refname)",
@@ -212,6 +256,8 @@ export function listBranches(path) {
       lastCommitTime: Number(time ?? 0),
       lastCommitSummary: summary ?? "",
       lastCommitAuthor: author ?? "",
+      // 説明はローカルブランチにしか設定できない
+      description: isRemote ? null : (descriptions.get(name) ?? null),
       worktreePath: byBranch.get(name) ?? null,
     };
   });

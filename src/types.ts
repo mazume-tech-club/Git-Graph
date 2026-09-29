@@ -45,6 +45,8 @@ export type BranchInfo = {
   lastCommitTime: number;
   lastCommitSummary: string;
   lastCommitAuthor: string;
+  /** `git branch --edit-description` で設定される説明 */
+  description: string | null;
   /** このブランチをチェックアウトしているワークツリーのパス */
   worktreePath: string | null;
 };
@@ -60,6 +62,11 @@ export type WorktreeInfo = {
   lockReason: string | null;
   /** 作業ディレクトリが失われている等で git worktree prune の対象になるか */
   isPrunable: boolean;
+  /** チェックアウト中のブランチに付けられた説明 */
+  description: string | null;
+  /** HEAD のコミットメッセージ（1 行目） */
+  headSummary: string | null;
+  headTime: number | null;
 };
 
 export type ChangeStatus =

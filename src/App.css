@@ -806,3 +806,32 @@ body {
   flex: 0 0 auto;
   font-size: 11px;
 }
+
+/* ---- 一覧行の補足（説明 / 最後のコミット） ---- */
+
+.branch-row {
+  flex-wrap: wrap;
+}
+
+.row-note {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 明示的に付けられた説明は、コミットメッセージと区別できるようにする */
+.row-note.described {
+  color: #22b8cf;
+}
+
+.row-note.described::before {
+  content: "✎ ";
+}
+
+.worktree-age {
+  margin-left: 4px;
+}

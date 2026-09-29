@@ -76,6 +76,8 @@ pub struct BranchInfo {
     pub last_commit_time: i64,
     pub last_commit_summary: String,
     pub last_commit_author: String,
+    /// `git branch --edit-description` で設定される説明
+    pub description: Option<String>,
     /// このブランチをチェックアウトしているワークツリーのパス
     pub worktree_path: Option<String>,
 }
@@ -94,6 +96,11 @@ pub struct WorktreeInfo {
     pub lock_reason: Option<String>,
     /// 作業ディレクトリが失われている等で、git worktree prune の対象になるか
     pub is_prunable: bool,
+    /// チェックアウト中のブランチに付けられた説明
+    pub description: Option<String>,
+    /// HEAD のコミットメッセージ（1 行目）
+    pub head_summary: Option<String>,
+    pub head_time: Option<i64>,
 }
 
 fn open(path: &str) -> Result<Repository, String> {
@@ -301,6 +308,21 @@ fn worktree_by_branch(repo: &Repository) -> HashMap<String, String> {
     map
 }
 
+/// `git branch --edit-description` で設定された説明を読む。
+/// 未設定なら None。空文字も None として扱う。
+fn branch_description(repo: &Repository, branch: &str) -> Option<String> {
+    let config = repo.config().ok()?;
+    let text = config
+        .get_string(&format!("branch.{branch}.description"))
+        .ok()?;
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 /// detached HEAD でなければ、チェックアウト中のブランチ名を返す
 fn checked_out_branch(repo: &Repository) -> Option<String> {
     if repo.head_detached().unwrap_or(false) {
@@ -389,6 +411,12 @@ pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
                     .unwrap_or_default()
                     .to_string(),
                 last_commit_author: commit.author().name().unwrap_or_default().to_string(),
+                // 説明はローカルブランチにしか設定できない
+                description: if is_local {
+                    branch_description(&repo, &name)
+                } else {
+                    None
+                },
                 worktree_path: worktrees.get(&name).cloned(),
                 target: target.to_string(),
                 name,
@@ -399,34 +427,66 @@ pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
     Ok(branches)
 }
 
+/// ワークツリーが今どこを指しているか
+struct HeadInfo {
+    branch: Option<String>,
+    id: Option<String>,
+    detached: bool,
+    summary: Option<String>,
+    time: Option<i64>,
+}
+
+fn head_info(repo: &Repository) -> HeadInfo {
+    let commit = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+    let (summary, time) = match &commit {
+        Some(c) => (
+            c.summary().ok().flatten().map(str::to_string),
+            Some(c.time().seconds()),
+        ),
+        None => (None, None),
+    };
+
+    HeadInfo {
+        branch: checked_out_branch(repo),
+        id: commit.map(|c| c.id().to_string()),
+        detached: repo.head_detached().unwrap_or(false),
+        summary,
+        time,
+    }
+}
+
 /// ワークツリーの一覧。メインワークツリーを先頭に置く。
 pub fn list_worktrees(path: &str) -> Result<Vec<WorktreeInfo>, String> {
     let repo = open(path)?;
     let mut list = Vec::new();
 
     if let Some(dir) = main_workdir(&repo) {
-        let main = Repository::open(&dir).ok();
-        let (branch, head, is_detached) = match &main {
-            Some(r) => (
-                checked_out_branch(r),
-                r.head()
-                    .ok()
-                    .and_then(|h| h.peel_to_commit().ok())
-                    .map(|c| c.id().to_string()),
-                r.head_detached().unwrap_or(false),
-            ),
-            None => (None, None, false),
+        let head = match Repository::open(&dir) {
+            Ok(main) => head_info(&main),
+            Err(_) => HeadInfo {
+                branch: None,
+                id: None,
+                detached: false,
+                summary: None,
+                time: None,
+            },
         };
         list.push(WorktreeInfo {
             name: "(main)".to_string(),
             path: dir,
-            branch,
-            head,
+            description: head
+                .branch
+                .as_deref()
+                .and_then(|b| branch_description(&repo, b)),
+            branch: head.branch,
+            head: head.id,
             is_main: true,
-            is_detached,
+            is_detached: head.detached,
             is_locked: false,
             lock_reason: None,
             is_prunable: false,
+            head_summary: head.summary,
+            head_time: head.time,
         });
     }
 
@@ -441,30 +501,34 @@ pub fn list_worktrees(path: &str) -> Result<Vec<WorktreeInfo>, String> {
             Ok(WorktreeLockStatus::Locked(reason)) => (true, reason),
             _ => (false, None),
         };
-        let wt_repo = Repository::open_from_worktree(&worktree).ok();
-        let (branch, head, is_detached) = match &wt_repo {
-            Some(r) => (
-                checked_out_branch(r),
-                r.head()
-                    .ok()
-                    .and_then(|h| h.peel_to_commit().ok())
-                    .map(|c| c.id().to_string()),
-                r.head_detached().unwrap_or(false),
-            ),
-            None => (None, None, false),
+        let head = match Repository::open_from_worktree(&worktree) {
+            Ok(wt_repo) => head_info(&wt_repo),
+            Err(_) => HeadInfo {
+                branch: None,
+                id: None,
+                detached: false,
+                summary: None,
+                time: None,
+            },
         };
 
         list.push(WorktreeInfo {
             name: name.to_string(),
             path: worktree.path().to_string_lossy().to_string(),
-            branch,
-            head,
+            description: head
+                .branch
+                .as_deref()
+                .and_then(|b| branch_description(&repo, b)),
+            branch: head.branch,
+            head: head.id,
             is_main: false,
-            is_detached,
+            is_detached: head.detached,
             is_locked,
             lock_reason,
             // 作業ディレクトリが消えている場合などを拾う
             is_prunable: worktree.validate().is_err(),
+            head_summary: head.summary,
+            head_time: head.time,
         });
     }
 
@@ -1372,5 +1436,57 @@ mod tests {
         let (dir, _outside) = fixture_with_worktree();
         assert_eq!(fingerprint(&path_of(&dir)).unwrap().worktrees, 1);
         assert_eq!(fingerprint(&path_of(&fixture())).unwrap().worktrees, 0);
+    }
+
+    #[test]
+    fn branch_and_worktree_expose_descriptions() {
+        let (dir, _outside) = fixture_with_worktree();
+        let repo = Repository::open(dir.path()).unwrap();
+        repo.config()
+            .unwrap()
+            .set_str("branch.feature.description", "詳細ペインの実装")
+            .unwrap();
+        repo.config()
+            .unwrap()
+            .set_str("branch.stale.description", "   ")
+            .unwrap();
+
+        let branches = list_branches(&path_of(&dir)).unwrap();
+        let by_name: HashMap<&str, &BranchInfo> =
+            branches.iter().map(|b| (b.name.as_str(), b)).collect();
+
+        assert_eq!(
+            by_name["feature"].description.as_deref(),
+            Some("詳細ペインの実装")
+        );
+        assert_eq!(
+            by_name["stale"].description, None,
+            "空白だけの説明は無しとして扱う"
+        );
+        assert_eq!(by_name["main"].description, None, "未設定は None");
+
+        // ワークツリーには、そこで開いているブランチの説明が付く
+        let worktrees = list_worktrees(&path_of(&dir)).unwrap();
+        let linked = worktrees.iter().find(|w| !w.is_main).unwrap();
+        assert_eq!(linked.branch.as_deref(), Some("feature"));
+        assert_eq!(linked.description.as_deref(), Some("詳細ペインの実装"));
+    }
+
+    #[test]
+    fn worktree_reports_head_commit() {
+        let (dir, _outside) = fixture_with_worktree();
+        let worktrees = list_worktrees(&path_of(&dir)).unwrap();
+
+        let main = worktrees.iter().find(|w| w.is_main).unwrap();
+        assert_eq!(
+            main.head_summary.as_deref(),
+            Some("M"),
+            "main の HEAD はマージコミット"
+        );
+        assert_eq!(main.head_time, Some(5_000));
+
+        let linked = worktrees.iter().find(|w| !w.is_main).unwrap();
+        assert_eq!(linked.head_summary.as_deref(), Some("C"));
+        assert_eq!(linked.head_time, Some(3_000));
     }
 }

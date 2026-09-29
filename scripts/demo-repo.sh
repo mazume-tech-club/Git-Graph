@@ -82,6 +82,11 @@ GIT_AUTHOR_DATE="2025-11-20T10:00:00+09:00" GIT_COMMITTER_DATE="2025-11-20T10:00
   git commit -q --allow-empty -m "レビュー待ちのまま残った修正"
 git checkout -q main
 
+# ブランチの説明（git branch --edit-description と同じもの）
+git config branch.feature/detail.description "詳細ペインの作業用。ワークツリーで進行中"
+git config branch.feature/abandoned.description "方針変更で中断。消してよい"
+git config branch.fix/forgotten.description "レビュー待ちのまま止まっている"
+
 # 別ワークツリーで feature/detail を開いている状態を作る
 git worktree add -q "${DEST}-wt" feature/detail 2>/dev/null || true
 

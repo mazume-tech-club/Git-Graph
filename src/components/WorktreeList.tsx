@@ -1,3 +1,4 @@
+import { formatAge } from "../format";
 import type { WorktreeInfo } from "../types";
 
 type Props = {
@@ -38,6 +39,20 @@ export function WorktreeList({ worktrees, onSelect }: Props) {
               <span className="worktree-path">
                 <bdi>{wt.path}</bdi>
               </span>
+
+              {/* 何をしているワークツリーか分かるよう、説明か HEAD のコミットを出す */}
+              {wt.description ? (
+                <span className="row-note described">{wt.description}</span>
+              ) : (
+                wt.headSummary && (
+                  <span className="row-note">
+                    {wt.headSummary}
+                    {wt.headTime !== null && (
+                      <span className="worktree-age">（{formatAge(wt.headTime)}）</span>
+                    )}
+                  </span>
+                )
+              )}
             </button>
           </li>
         ))}

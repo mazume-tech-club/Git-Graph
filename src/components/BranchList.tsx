@@ -82,6 +82,13 @@ export function BranchList({ branches, selectedTarget, onSelect }: Props) {
                     {formatAge(b.lastCommitTime)}
                   </span>
                 </span>
+
+                {/* 説明が付いていればそれを、無ければ最後のコミットを手がかりに出す */}
+                {b.description ? (
+                  <span className="row-note described">{b.description}</span>
+                ) : (
+                  <span className="row-note">{b.lastCommitSummary || "(メッセージなし)"}</span>
+                )}
               </button>
             </li>
           ))}
