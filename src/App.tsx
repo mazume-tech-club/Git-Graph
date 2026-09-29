@@ -47,7 +47,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(readStoredWidth);
-  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  /** 最後にリポジトリの変化を確認できた時刻。ポーリングが生きていることの目印 */
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const contentRef = useRef<HTMLElement>(null);
 
   /**
@@ -73,7 +74,7 @@ function App() {
       setBranches(branchList);
       setWorktrees(worktreeList);
       setWorktreeChanges(changes);
-      setUpdatedAt(Date.now());
+      setCheckedAt(Date.now());
       if (keepSelection) {
         // 選択中のコミットが消えていたら先頭に戻す
         setSelectedId((prev) =>
@@ -183,6 +184,8 @@ function App() {
           await load(repoPath, { silent: true, keepSelection: true });
         }
         previous = key;
+        // 変化が無くても「確認できた」ことは出す
+        setCheckedAt(Date.now());
       } catch {
         // 一時的な失敗（読み込み中の ref など）は次の周期に任せる
       }
@@ -231,9 +234,12 @@ function App() {
               {commits.length}
               {commits.length >= COMMIT_LIMIT ? `+ (上限 ${COMMIT_LIMIT})` : ""} commits
             </span>
-            {updatedAt !== null && (
-              <span className="repo-updated" title="変更があると自動で読み直します">
-                更新 {new Date(updatedAt).toLocaleTimeString()}
+            {checkedAt !== null && (
+              <span
+                className="repo-updated"
+                title={`${REFRESH_INTERVAL_MS / 1000} 秒ごとに変更を確認し、変わっていれば読み直します`}
+              >
+                確認 {new Date(checkedAt).toLocaleTimeString()}
               </span>
             )}
           </div>

@@ -1,5 +1,9 @@
 mod git;
 
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, WindowEvent};
+
 use git::{BranchInfo, CommitInfo, DiffSummary, FileDiff, RepoFingerprint, RepoInfo, WorktreeInfo};
 
 /// 指定パス（またはその上位）の Git リポジトリを開き、概要を返す。
@@ -66,6 +70,16 @@ fn startup_repository() -> Option<String> {
         .filter(|arg| std::path::Path::new(arg).is_dir())
 }
 
+/// メインウィンドウを前面に戻す。最小化されている場合も考慮する。
+fn show_main_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -81,6 +95,52 @@ pub fn run() {
             repo_fingerprint,
             startup_repository
         ])
+        .setup(|app| {
+            let show = MenuItem::with_id(app, "show", "ウィンドウを表示", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit])?;
+
+            let mut tray = TrayIconBuilder::with_id("main")
+                .tooltip("Git Graph")
+                .menu(&menu)
+                // 左クリックはメニューではなくウィンドウの復帰に割り当てる
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => show_main_window(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main_window(tray.app_handle());
+                    }
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            // トレイが使えない環境（Linux でトレイホストが無い等）でも起動は続ける
+            if let Err(err) = tray.build(app) {
+                eprintln!("タスクトレイを作成できませんでした: {err}");
+            }
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            let WindowEvent::CloseRequested { api, .. } = event else {
+                return;
+            };
+            // トレイがあるときだけ格納する。無い環境で閉じられなくなるのを避ける
+            if window.app_handle().tray_by_id("main").is_none() {
+                return;
+            }
+            api.prevent_close();
+            let _ = window.hide();
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
