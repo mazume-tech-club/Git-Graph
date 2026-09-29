@@ -1,6 +1,6 @@
 mod git;
 
-use git::{BranchInfo, CommitInfo, RepoInfo, WorktreeInfo};
+use git::{BranchInfo, CommitInfo, DiffSummary, FileDiff, RepoInfo, WorktreeInfo};
 
 /// 指定パス（またはその上位）の Git リポジトリを開き、概要を返す。
 #[tauri::command]
@@ -26,6 +26,30 @@ fn list_worktrees(path: String) -> Result<Vec<WorktreeInfo>, String> {
     git::list_worktrees(&path)
 }
 
+/// 変更されたファイルの一覧。
+///
+/// `to` を省略すると作業ツリーとの比較、`from` を省略すると `to` の第一親との比較。
+/// 両方指定すれば任意の 2 コミット間を比較できる。
+#[tauri::command]
+fn diff_summary(
+    path: String,
+    from: Option<String>,
+    to: Option<String>,
+) -> Result<DiffSummary, String> {
+    git::diff_summary(&path, from.as_deref(), to.as_deref())
+}
+
+/// 1 ファイル分の差分。範囲の指定方法は diff_summary と同じ。
+#[tauri::command]
+fn file_diff(
+    path: String,
+    from: Option<String>,
+    to: Option<String>,
+    file: String,
+) -> Result<FileDiff, String> {
+    git::file_diff(&path, from.as_deref(), to.as_deref(), &file)
+}
+
 /// 起動時引数で渡されたリポジトリのパス（`git-graph <path>`）。
 /// 指定が無い、またはディレクトリでない場合は None。
 #[tauri::command]
@@ -46,6 +70,8 @@ pub fn run() {
             list_commits,
             list_branches,
             list_worktrees,
+            diff_summary,
+            file_diff,
             startup_repository
         ])
         .run(tauri::generate_context!())

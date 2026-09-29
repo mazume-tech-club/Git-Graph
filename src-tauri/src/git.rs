@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use git2::{BranchType, Repository, Sort, WorktreeLockStatus};
+use git2::{
+    BranchType, Delta, Diff, DiffFindOptions, DiffLineType, DiffOptions, Oid, Patch, Repository,
+    Sort, Tree, WorktreeLockStatus,
+};
 use serde::Serialize;
 
 /// リポジトリを開いた直後に返す概要情報。
@@ -466,6 +469,310 @@ pub fn list_worktrees(path: &str) -> Result<Vec<WorktreeInfo>, String> {
     Ok(list)
 }
 
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ChangeStatus {
+    Added,
+    Deleted,
+    Modified,
+    Renamed,
+    Copied,
+    TypeChange,
+    Untracked,
+    Other,
+}
+
+impl From<Delta> for ChangeStatus {
+    fn from(delta: Delta) -> Self {
+        match delta {
+            Delta::Added => ChangeStatus::Added,
+            Delta::Deleted => ChangeStatus::Deleted,
+            Delta::Modified => ChangeStatus::Modified,
+            Delta::Renamed => ChangeStatus::Renamed,
+            Delta::Copied => ChangeStatus::Copied,
+            Delta::Typechange => ChangeStatus::TypeChange,
+            Delta::Untracked => ChangeStatus::Untracked,
+            _ => ChangeStatus::Other,
+        }
+    }
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChange {
+    pub path: String,
+    /// リネーム / コピー元のパス
+    pub old_path: Option<String>,
+    pub status: ChangeStatus,
+    pub insertions: usize,
+    pub deletions: usize,
+    pub is_binary: bool,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffSummary {
+    pub files: Vec<FileChange>,
+    pub insertions: usize,
+    pub deletions: usize,
+    /// マージコミットを第一親と比較していることを UI で注記するため
+    pub against_first_parent: bool,
+}
+
+#[derive(Serialize, Debug, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum LineKind {
+    Context,
+    Addition,
+    Deletion,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffLine {
+    pub kind: LineKind,
+    pub old_lineno: Option<u32>,
+    pub new_lineno: Option<u32>,
+    pub content: String,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffHunk {
+    pub header: String,
+    pub lines: Vec<DiffLine>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDiff {
+    pub hunks: Vec<DiffHunk>,
+    pub is_binary: bool,
+    /// 行数が多すぎて途中で打ち切ったか
+    pub truncated: bool,
+}
+
+/// 1 ファイルあたりに返す差分行数の上限。巨大なファイルで UI が固まるのを防ぐ
+const MAX_DIFF_LINES: usize = 4000;
+
+fn tree_of<'a>(repo: &'a Repository, rev: &str) -> Result<Tree<'a>, String> {
+    let oid = Oid::from_str(rev).map_err(|e| format!("コミット ID が不正です: {}", e.message()))?;
+    repo.find_commit(oid)
+        .and_then(|c| c.tree())
+        .map_err(|e| e.message().to_string())
+}
+
+fn head_tree(repo: &Repository) -> Option<Tree<'_>> {
+    repo.head().ok()?.peel_to_commit().ok()?.tree().ok()
+}
+
+/// 比較する 2 点から diff を組み立てる。
+///
+/// - `to` が None … 作業ツリーとの比較（`from` 省略時は HEAD が基準）
+/// - `from` が None … `to` の第一親との比較（= そのコミットの変更内容）
+/// - 両方指定 … 任意の 2 コミット間の比較
+fn build_diff<'a>(
+    repo: &'a Repository,
+    from: Option<&str>,
+    to: Option<&str>,
+    pathspec: Option<&str>,
+) -> Result<(Diff<'a>, bool), String> {
+    let mut opts = DiffOptions::new();
+    opts.context_lines(3);
+    if let Some(spec) = pathspec {
+        opts.pathspec(spec);
+    }
+
+    let err = |e: git2::Error| e.message().to_string();
+
+    let (mut diff, against_first_parent) = match to {
+        None => {
+            let base = match from {
+                Some(rev) => Some(tree_of(repo, rev)?),
+                None => head_tree(repo),
+            };
+            opts.include_untracked(true);
+            let diff = repo
+                .diff_tree_to_workdir_with_index(base.as_ref(), Some(&mut opts))
+                .map_err(err)?;
+            (diff, false)
+        }
+        Some(rev) => {
+            let oid = Oid::from_str(rev)
+                .map_err(|e| format!("コミット ID が不正です: {}", e.message()))?;
+            let commit = repo.find_commit(oid).map_err(err)?;
+            let new_tree = commit.tree().map_err(err)?;
+            match from {
+                None => {
+                    // 親が無い（ルートコミット）場合は空ツリーとの比較になる
+                    let parent_tree = match commit.parent(0) {
+                        Ok(parent) => Some(parent.tree().map_err(err)?),
+                        Err(_) => None,
+                    };
+                    let diff = repo
+                        .diff_tree_to_tree(parent_tree.as_ref(), Some(&new_tree), Some(&mut opts))
+                        .map_err(err)?;
+                    (diff, commit.parent_count() > 1)
+                }
+                Some(base) => {
+                    let base_tree = tree_of(repo, base)?;
+                    let diff = repo
+                        .diff_tree_to_tree(Some(&base_tree), Some(&new_tree), Some(&mut opts))
+                        .map_err(err)?;
+                    (diff, false)
+                }
+            }
+        }
+    };
+
+    let mut find = DiffFindOptions::new();
+    find.renames(true).copies(true);
+    // リネーム検出に失敗しても差分自体は返せるので、エラーは無視する
+    let _ = diff.find_similar(Some(&mut find));
+
+    Ok((diff, against_first_parent))
+}
+
+/// 変更されたファイルの一覧と増減行数。
+pub fn diff_summary(
+    path: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<DiffSummary, String> {
+    let repo = open(path)?;
+    let (diff, against_first_parent) = build_diff(&repo, from, to, None)?;
+
+    let mut files = Vec::new();
+    let mut insertions = 0;
+    let mut deletions = 0;
+
+    for (i, delta) in diff.deltas().enumerate() {
+        let is_binary = delta.old_file().is_binary() || delta.new_file().is_binary();
+        let (ins, del) = if is_binary {
+            (0, 0)
+        } else {
+            Patch::from_diff(&diff, i)
+                .ok()
+                .flatten()
+                .and_then(|p| p.line_stats().ok())
+                .map(|(_context, added, removed)| (added, removed))
+                .unwrap_or((0, 0))
+        };
+        insertions += ins;
+        deletions += del;
+
+        let as_string = |f: git2::DiffFile<'_>| f.path().map(|p| p.to_string_lossy().to_string());
+        let new_path = as_string(delta.new_file());
+        let old_path = as_string(delta.old_file());
+        let status = ChangeStatus::from(delta.status());
+
+        files.push(FileChange {
+            path: new_path.or_else(|| old_path.clone()).unwrap_or_default(),
+            old_path: match status {
+                ChangeStatus::Renamed | ChangeStatus::Copied => old_path,
+                _ => None,
+            },
+            status,
+            insertions: ins,
+            deletions: del,
+            is_binary,
+        });
+    }
+
+    Ok(DiffSummary {
+        files,
+        insertions,
+        deletions,
+        against_first_parent,
+    })
+}
+
+/// 1 ファイル分の差分をハンク単位で返す。
+pub fn file_diff(
+    path: &str,
+    from: Option<&str>,
+    to: Option<&str>,
+    file: &str,
+) -> Result<FileDiff, String> {
+    let repo = open(path)?;
+    let (diff, _) = build_diff(&repo, from, to, Some(file))?;
+
+    let mut hunks = Vec::new();
+    let mut is_binary = false;
+    let mut truncated = false;
+    let mut line_budget = MAX_DIFF_LINES;
+
+    for (i, delta) in diff.deltas().enumerate() {
+        // pathspec はディレクトリにも一致するので、対象ファイルだけに絞り直す
+        let matches = [delta.new_file().path(), delta.old_file().path()]
+            .into_iter()
+            .flatten()
+            .any(|p| p.to_string_lossy() == file);
+        if !matches {
+            continue;
+        }
+        if delta.old_file().is_binary() || delta.new_file().is_binary() {
+            is_binary = true;
+            continue;
+        }
+
+        let Ok(Some(patch)) = Patch::from_diff(&diff, i) else {
+            continue;
+        };
+        for h in 0..patch.num_hunks() {
+            let Ok((hunk, _)) = patch.hunk(h) else {
+                continue;
+            };
+            let count = patch.num_lines_in_hunk(h).unwrap_or(0);
+            if count > line_budget {
+                truncated = true;
+                break;
+            }
+            line_budget -= count;
+
+            let mut lines = Vec::with_capacity(count);
+            for l in 0..count {
+                let Ok(line) = patch.line_in_hunk(h, l) else {
+                    continue;
+                };
+                let kind = match line.origin_value() {
+                    DiffLineType::Addition | DiffLineType::AddEOFNL => LineKind::Addition,
+                    DiffLineType::Deletion | DiffLineType::DeleteEOFNL => LineKind::Deletion,
+                    _ => LineKind::Context,
+                };
+                lines.push(DiffLine {
+                    kind,
+                    old_lineno: line.old_lineno(),
+                    new_lineno: line.new_lineno(),
+                    content: strip_eol(&String::from_utf8_lossy(line.content())),
+                });
+            }
+            hunks.push(DiffHunk {
+                header: strip_eol(&String::from_utf8_lossy(hunk.header())),
+                lines,
+            });
+        }
+    }
+
+    Ok(FileDiff {
+        hunks,
+        is_binary,
+        truncated,
+    })
+}
+
+/// 行末の改行だけを落とす。差分では行末の空白自体に意味があるので trim_end は使わない。
+fn strip_eol(text: &str) -> String {
+    let mut out = text.to_string();
+    while out.ends_with(LF) || out.ends_with(CR) {
+        out.pop();
+    }
+    out
+}
+
+const LF: char = '\u{000A}';
+const CR: char = '\u{000D}';
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -759,5 +1066,233 @@ mod tests {
         let dir = TempDir::new().unwrap();
         Repository::init(dir.path()).unwrap();
         assert!(list_branches(&path_of(&dir)).unwrap().is_empty());
+    }
+
+    /// 実ファイルを持つリポジトリを作る。差分のテストには中身が要る。
+    ///
+    /// 1. a.txt を追加
+    /// 2. a.txt を変更し、b.txt を追加
+    /// 3. a.txt を c.txt にリネーム
+    fn file_fixture() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        let mut init = RepositoryInitOptions::new();
+        init.initial_head("main");
+        let repo = Repository::init_opts(dir.path(), &init).unwrap();
+
+        write_and_commit(&repo, &[("a.txt", Some(A_ORIGINAL))], "a.txt を追加", 1_000);
+        write_and_commit(
+            &repo,
+            &[("a.txt", Some(A_CHANGED)), ("b.txt", Some("b\n"))],
+            "a.txt を変更し b.txt を追加",
+            2_000,
+        );
+        write_and_commit(
+            &repo,
+            &[("a.txt", None), ("c.txt", Some(A_CHANGED))],
+            "a.txt を c.txt にリネーム",
+            3_000,
+        );
+
+        dir
+    }
+
+    const A_ORIGINAL: &str = "line1\nline2\nline3\n";
+    const A_CHANGED: &str = "line1\nCHANGED\nline3\n";
+
+    /// `content` が None のファイルは削除する
+    fn write_and_commit(
+        repo: &Repository,
+        files: &[(&str, Option<&str>)],
+        message: &str,
+        seconds: i64,
+    ) -> Oid {
+        use std::path::Path;
+
+        let workdir = repo.workdir().unwrap().to_path_buf();
+        let mut index = repo.index().unwrap();
+        for (name, content) in files {
+            match content {
+                Some(text) => {
+                    std::fs::write(workdir.join(name), text).unwrap();
+                    index.add_path(Path::new(name)).unwrap();
+                }
+                None => {
+                    std::fs::remove_file(workdir.join(name)).unwrap();
+                    index.remove_path(Path::new(name)).unwrap();
+                }
+            }
+        }
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+
+        let sig = Signature::new("Tester", "tester@example.com", &Time::new(seconds, 540)).unwrap();
+        let head = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+        let parents: Vec<&Commit> = head.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+            .unwrap()
+    }
+
+    /// 新しい順のコミット一覧（0 番目が HEAD）
+    fn commit_ids(dir: &TempDir) -> Vec<String> {
+        list_commits(&path_of(dir), 100)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.id)
+            .collect()
+    }
+
+    #[test]
+    fn diff_summary_lists_changed_files_of_a_commit() {
+        let dir = file_fixture();
+        let ids = commit_ids(&dir);
+        // ids[0] = リネーム, ids[1] = 変更 + 追加, ids[2] = 最初の追加
+        let summary = diff_summary(&path_of(&dir), None, Some(&ids[1])).unwrap();
+
+        assert!(!summary.against_first_parent);
+        assert_eq!(summary.files.len(), 2);
+
+        let by_path: HashMap<&str, &FileChange> =
+            summary.files.iter().map(|f| (f.path.as_str(), f)).collect();
+
+        let a = by_path["a.txt"];
+        assert_eq!(a.status, ChangeStatus::Modified);
+        assert_eq!((a.insertions, a.deletions), (1, 1));
+        assert!(!a.is_binary);
+
+        let b = by_path["b.txt"];
+        assert_eq!(b.status, ChangeStatus::Added);
+        assert_eq!((b.insertions, b.deletions), (1, 0));
+
+        assert_eq!((summary.insertions, summary.deletions), (2, 1));
+    }
+
+    #[test]
+    fn diff_summary_treats_root_commit_as_all_added() {
+        let dir = file_fixture();
+        let ids = commit_ids(&dir);
+        let summary = diff_summary(&path_of(&dir), None, Some(ids.last().unwrap())).unwrap();
+
+        assert_eq!(summary.files.len(), 1);
+        assert_eq!(summary.files[0].path, "a.txt");
+        assert_eq!(summary.files[0].status, ChangeStatus::Added);
+        assert_eq!(summary.files[0].insertions, 3, "3 行すべてが追加");
+        assert_eq!(summary.deletions, 0);
+    }
+
+    #[test]
+    fn diff_summary_detects_renames() {
+        let dir = file_fixture();
+        let ids = commit_ids(&dir);
+        let summary = diff_summary(&path_of(&dir), None, Some(&ids[0])).unwrap();
+
+        assert_eq!(summary.files.len(), 1, "リネームは 1 件にまとまる");
+        let renamed = &summary.files[0];
+        assert_eq!(renamed.status, ChangeStatus::Renamed);
+        assert_eq!(renamed.path, "c.txt");
+        assert_eq!(renamed.old_path.as_deref(), Some("a.txt"));
+    }
+
+    #[test]
+    fn diff_summary_compares_two_arbitrary_commits() {
+        let dir = file_fixture();
+        let ids = commit_ids(&dir);
+        // 最初のコミットと HEAD を直接比較する
+        let summary =
+            diff_summary(&path_of(&dir), Some(ids.last().unwrap()), Some(&ids[0])).unwrap();
+
+        let paths: Vec<&str> = summary.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(
+            paths.contains(&"b.txt"),
+            "途中で追加された b.txt が含まれる"
+        );
+        assert!(paths.contains(&"c.txt"), "リネーム後の c.txt が含まれる");
+    }
+
+    #[test]
+    fn diff_summary_reports_uncommitted_changes() {
+        let dir = file_fixture();
+        std::fs::write(dir.path().join("c.txt"), "line1\nUNCOMMITTED\nline3\n").unwrap();
+        std::fs::write(dir.path().join("new.txt"), "new\n").unwrap();
+
+        let summary = diff_summary(&path_of(&dir), None, None).unwrap();
+        let by_path: HashMap<&str, &FileChange> =
+            summary.files.iter().map(|f| (f.path.as_str(), f)).collect();
+
+        assert_eq!(by_path["c.txt"].status, ChangeStatus::Modified);
+        assert_eq!(
+            by_path["new.txt"].status,
+            ChangeStatus::Untracked,
+            "未追跡ファイルも拾う"
+        );
+    }
+
+    #[test]
+    fn diff_summary_flags_merge_commits() {
+        let dir = fixture();
+        let ids = commit_ids(&dir);
+        // fixture() の HEAD はマージコミット
+        let summary = diff_summary(&path_of(&dir), None, Some(&ids[0])).unwrap();
+        assert!(
+            summary.against_first_parent,
+            "マージコミットは第一親と比較していることを示す"
+        );
+    }
+
+    #[test]
+    fn file_diff_returns_hunks_with_line_numbers() {
+        let dir = file_fixture();
+        let ids = commit_ids(&dir);
+        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "a.txt").unwrap();
+
+        assert!(!diff.is_binary);
+        assert!(!diff.truncated);
+        assert_eq!(diff.hunks.len(), 1);
+
+        let hunk = &diff.hunks[0];
+        assert!(hunk.header.starts_with("@@"), "{}", hunk.header);
+
+        let added: Vec<&str> = hunk
+            .lines
+            .iter()
+            .filter(|l| matches!(l.kind, LineKind::Addition))
+            .map(|l| l.content.as_str())
+            .collect();
+        let removed: Vec<&str> = hunk
+            .lines
+            .iter()
+            .filter(|l| matches!(l.kind, LineKind::Deletion))
+            .map(|l| l.content.as_str())
+            .collect();
+        assert_eq!(added, vec!["CHANGED"]);
+        assert_eq!(removed, vec!["line2"]);
+
+        // 追加行には新しい行番号だけ、削除行には古い行番号だけが付く
+        let addition = hunk
+            .lines
+            .iter()
+            .find(|l| matches!(l.kind, LineKind::Addition))
+            .unwrap();
+        assert_eq!(addition.new_lineno, Some(2));
+        assert_eq!(addition.old_lineno, None);
+
+        let context = hunk
+            .lines
+            .iter()
+            .find(|l| matches!(l.kind, LineKind::Context))
+            .unwrap();
+        assert_eq!(context.old_lineno, Some(1));
+        assert_eq!(context.new_lineno, Some(1));
+    }
+
+    #[test]
+    fn file_diff_returns_nothing_for_unrelated_file() {
+        let dir = file_fixture();
+        let ids = commit_ids(&dir);
+        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "b.txt").unwrap();
+        assert_eq!(diff.hunks.len(), 1, "b.txt 自身の差分は取れる");
+
+        let none = file_diff(&path_of(&dir), None, Some(&ids[1]), "missing.txt").unwrap();
+        assert!(none.hunks.is_empty());
     }
 }
