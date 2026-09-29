@@ -107,6 +107,116 @@ export function listCommits(path, limit) {
     });
 }
 
+/** `git worktree list --porcelain` を解析する */
+export function listWorktrees(path) {
+  const info = repoInfo(path);
+  const raw = git(info.path, ["worktree", "list", "--porcelain"]);
+  const list = [];
+  let current = null;
+
+  const flush = () => {
+    if (current) list.push(current);
+  };
+
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      flush();
+      current = {
+        name: "",
+        path: line.slice(9).trim(),
+        branch: null,
+        head: null,
+        isMain: list.length === 0,
+        isDetached: false,
+        isLocked: false,
+        lockReason: null,
+        isPrunable: false,
+      };
+    } else if (!current) {
+      continue;
+    } else if (line.startsWith("HEAD ")) {
+      current.head = line.slice(5).trim();
+    } else if (line.startsWith("branch ")) {
+      current.branch = line.slice(7).trim().replace(/^refs\/heads\//, "");
+    } else if (line.trim() === "detached") {
+      current.isDetached = true;
+    } else if (line.startsWith("locked")) {
+      current.isLocked = true;
+      current.lockReason = line.slice(6).trim() || null;
+    } else if (line.trim() === "prunable" || line.startsWith("prunable ")) {
+      current.isPrunable = true;
+    }
+  }
+  flush();
+
+  for (const wt of list) {
+    wt.name = wt.isMain ? "(main)" : (wt.path.split(/[\/]/).filter(Boolean).pop() ?? wt.path);
+  }
+  return list;
+}
+
+export function listBranches(path) {
+  const info = repoInfo(path);
+  if (info.isEmpty) return [];
+
+  // ブランチ名 -> それを開いているワークツリーのパス
+  const byBranch = new Map();
+  for (const wt of listWorktrees(info.path)) {
+    if (wt.branch) byBranch.set(wt.branch, wt.path);
+  }
+
+  const format = [
+    "%(refname)",
+    "%(refname:short)",
+    "%(objectname)",
+    "%(upstream:short)",
+    "%(committerdate:unix)",
+    "%(contents:subject)",
+    "%(authorname)",
+    "%(HEAD)",
+  ].join(UNIT);
+
+  const raw = git(info.path, [
+    "for-each-ref",
+    `--format=${format}`,
+    "refs/heads",
+    "refs/remotes",
+  ]).trim();
+  if (raw === "") return [];
+
+  return raw.split("\n").map((line) => {
+    const [fullref, name, target, upstream, time, summary, author, head] = line.split(UNIT);
+    const isHead = head === "*";
+    // remote の設定有無に関わらず、refs/remotes/ 配下ならリモート追跡ブランチ
+    const isRemote = fullref.startsWith("refs/remotes/");
+
+    // --left-right --count は「左だけにある数」「右だけにある数」を返す
+    let ahead = 0;
+    let behind = 0;
+    try {
+      const counts = git(info.path, ["rev-list", "--left-right", "--count", `${target}...HEAD`]);
+      [ahead, behind] = counts.trim().split(/\s+/).map(Number);
+    } catch {
+      // HEAD が無い等。0 のままにする
+    }
+
+    return {
+      name,
+      kind: isHead ? "head" : isRemote ? "remoteBranch" : "localBranch",
+      target,
+      isHead,
+      upstream: upstream || null,
+      merged: ahead === 0,
+      ahead,
+      behind,
+      lastCommitTime: Number(time ?? 0),
+      lastCommitSummary: summary ?? "",
+      lastCommitAuthor: author ?? "",
+      worktreePath: byBranch.get(name) ?? null,
+    };
+  });
+}
+
 /**
  * Vite の開発サーバに差し込むミドルウェア。
  * Tauri のコマンドと 1 対 1 で対応させてある。
@@ -128,6 +238,10 @@ export function gitApiMiddleware(req, res, next) {
         return send(200, process.env.GIT_GRAPH_REPO ?? null);
       case "/__git/open_repository":
         return send(200, repoInfo(url.searchParams.get("path") ?? "."));
+      case "/__git/list_branches":
+        return send(200, listBranches(url.searchParams.get("path") ?? "."));
+      case "/__git/list_worktrees":
+        return send(200, listWorktrees(url.searchParams.get("path") ?? "."));
       case "/__git/list_commits":
         return send(
           200,

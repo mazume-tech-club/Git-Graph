@@ -1,4 +1,4 @@
-import type { Commit, RepoInfo } from "./types";
+import type { BranchInfo, Commit, RepoInfo, WorktreeInfo } from "./types";
 
 /**
  * Tauri と、ブラウザでの開発プレビューの両方から同じ形で呼べるようにした層。
@@ -41,6 +41,18 @@ export async function listCommits(path: string, limit: number): Promise<Commit[]
   return isTauri
     ? invokeTauri<Commit[]>("list_commits", { path, limit })
     : fetchDev<Commit[]>("list_commits", { path, limit: String(limit) });
+}
+
+export async function listBranches(path: string): Promise<BranchInfo[]> {
+  return isTauri
+    ? invokeTauri<BranchInfo[]>("list_branches", { path })
+    : fetchDev<BranchInfo[]>("list_branches", { path });
+}
+
+export async function listWorktrees(path: string): Promise<WorktreeInfo[]> {
+  return isTauri
+    ? invokeTauri<WorktreeInfo[]>("list_worktrees", { path })
+    : fetchDev<WorktreeInfo[]>("list_worktrees", { path });
 }
 
 /** リポジトリを選ばせる。ブラウザではフォルダ選択が使えないのでパスを入力してもらう */

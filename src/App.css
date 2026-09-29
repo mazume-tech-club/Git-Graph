@@ -151,11 +151,266 @@ body {
   overflow: auto;
 }
 
-.sidebar {
-  flex: 0 0 320px;
-  overflow: auto;
+.sidebar-shell {
+  flex: 0 0 auto;
+  min-width: 0;
   background: var(--bg-elevated);
   border-left: 1px solid var(--border);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+/* 左右にドラッグしてサイドバーの幅を変える */
+.splitter {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.splitter:hover,
+.splitter:active {
+  background: var(--accent);
+}
+
+/* ---- タブ ---- */
+
+.tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--fg-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+}
+
+.tab:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.tab-count {
+  padding: 0 5px;
+  font-size: 11px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+}
+
+.tab-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ---- 一覧パネル共通 ---- */
+
+.panel-filters {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-filters input[type="search"] {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.panel-filters label {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.panel-empty {
+  padding: 14px 10px;
+  color: var(--fg-muted);
+}
+
+.panel-list {
+  margin: 0;
+  list-style: none;
+  padding-inline-start: 0;
+}
+
+.branch-row,
+.worktree-row {
+  display: flex;
+  width: 100%;
+  padding: 5px 10px;
+  font: inherit;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.branch-row {
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.branch-row:hover,
+.worktree-row:hover {
+  background: var(--bg-hover);
+}
+
+.branch-row.selected {
+  background: var(--bg-selected);
+}
+
+.branch-name {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-head-mark {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.branch-name .remote {
+  color: #a78bfa;
+}
+
+.branch-wt {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-size: 10px;
+  color: #22b8cf;
+  border: 1px solid #22b8cf;
+  border-radius: 6px;
+}
+
+.branch-meta {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.branch-meta .ahead {
+  color: #31c48d;
+}
+
+.branch-meta .behind {
+  color: #e05561;
+}
+
+.badge-unmerged {
+  padding: 0 5px;
+  color: #f6a609;
+  border: 1px solid #f6a609;
+  border-radius: 8px;
+}
+
+.age.stale {
+  font-weight: 600;
+  color: #e05561;
+}
+
+/* ---- ワークツリー ---- */
+
+.worktree-row {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.worktree-head-line {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+
+.worktree-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worktree-hash {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.worktree-path {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.badge-main,
+.badge-locked,
+.badge-prunable {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  font-size: 10px;
+  border-radius: 8px;
+}
+
+.badge-main {
+  color: #4c8dff;
+  border: 1px solid #4c8dff;
+}
+
+.badge-locked {
+  color: #a78bfa;
+  border: 1px solid #a78bfa;
+}
+
+.badge-prunable {
+  color: #fff;
+  background: #e05561;
 }
 
 /* ---- コミット行 ---- */

@@ -20,6 +20,7 @@ export function CommitList({ graph, selectedId, onSelect }: Props) {
         return (
           <div
             key={commit.id}
+            id={`commit-${commit.id}`}
             role="option"
             aria-selected={selected}
             tabIndex={0}

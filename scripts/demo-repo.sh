@@ -60,5 +60,15 @@ git tag v0.2.0
 # リモート追跡ブランチのバッジも確認したいので、実体だけ作っておく
 git update-ref refs/remotes/origin/main main~2
 
+# 放置されたブランチ。未マージかつ最終コミットが古い状態にする
+git checkout -q -b feature/abandoned main~5
+GIT_AUTHOR_DATE="2025-03-04T10:00:00+09:00" GIT_COMMITTER_DATE="2025-03-04T10:00:00+09:00"   git commit -q --allow-empty -m "途中で止まった実装"
+git checkout -q -b fix/forgotten main~3
+GIT_AUTHOR_DATE="2025-11-20T10:00:00+09:00" GIT_COMMITTER_DATE="2025-11-20T10:00:00+09:00"   git commit -q --allow-empty -m "レビュー待ちのまま残った修正"
+git checkout -q main
+
+# 別ワークツリーで feature/detail を開いている状態を作る
+git worktree add -q "${DEST}-wt" feature/detail 2>/dev/null || true
+
 echo "作成しました: $DEST"
 git log --graph --oneline --all --topo-order
