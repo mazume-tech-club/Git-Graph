@@ -1,6 +1,6 @@
 mod git;
 
-use git::{BranchInfo, CommitInfo, DiffSummary, FileDiff, RepoInfo, WorktreeInfo};
+use git::{BranchInfo, CommitInfo, DiffSummary, FileDiff, RepoFingerprint, RepoInfo, WorktreeInfo};
 
 /// 指定パス（またはその上位）の Git リポジトリを開き、概要を返す。
 #[tauri::command]
@@ -50,6 +50,12 @@ fn file_diff(
     git::file_diff(&path, from.as_deref(), to.as_deref(), &file)
 }
 
+/// 変化の検知に使う軽い指紋。定期的に呼ぶ想定。
+#[tauri::command]
+fn repo_fingerprint(path: String) -> Result<RepoFingerprint, String> {
+    git::fingerprint(&path)
+}
+
 /// 起動時引数で渡されたリポジトリのパス（`git-graph <path>`）。
 /// 指定が無い、またはディレクトリでない場合は None。
 #[tauri::command]
@@ -72,6 +78,7 @@ pub fn run() {
             list_worktrees,
             diff_summary,
             file_diff,
+            repo_fingerprint,
             startup_repository
         ])
         .run(tauri::generate_context!())

@@ -2,6 +2,18 @@
 
 Git のコミットグラフを可視化するデスクトップアプリ。Tauri v2 + React + TypeScript。
 
+## できること
+
+- コミットグラフの表示（`git log --graph` と同じ列配置）
+- ブランチ一覧。HEAD との ahead/behind、未マージ、最終コミットからの経過を出すので
+  放置されたブランチが見つけやすい
+- ワークツリー一覧。どのパスでどのブランチを開いているか、ロックや prune 対象かが分かる
+- 差分表示（ユニファイド）。コミットの変更内容、未コミットの変更、
+  任意の 2 コミット間を比較できる
+- ref の変化を 5 秒ごとに見て自動で読み直す（手動の再読み込みは不要）
+
+読み取り専用で、チェックアウトやコミットなどの操作は行わない。
+
 ## 必要なもの
 
 Docker があれば、ホストに Rust / Node を入れなくてもビルドできる。
@@ -152,7 +164,11 @@ npm run tauri build -- --bundles nsis
 | `src/graph/lanes.ts` | コミット列からレーン（縦の列）配置を組み立てる |
 | `src/components/GraphCell.tsx` | 1 コミット分のグラフを SVG で描画する |
 | `src/components/CommitList.tsx` | グラフ + コミット一覧の行 |
-| `src/components/CommitDetail.tsx` | 選択したコミットの詳細 |
+| `src/components/CommitDetail.tsx` | 選択したコミットの詳細と差分 |
+| `src/components/Sidebar.tsx` | 右サイドバーのタブ切り替え |
+| `src/components/BranchList.tsx` | ブランチ一覧（未マージ・放置の表示） |
+| `src/components/WorktreeList.tsx` | ワークツリー一覧 |
+| `src/components/DiffPane.tsx` | 変更ファイル一覧とユニファイド差分 |
 | `scripts/check-lanes.mjs` | レーン配置の検証スクリプト |
 | `scripts/screenshot.sh` | 仮想ディスプレイ上で起動してスクリーンショットを撮る |
 | `scripts/screenshot-browser.sh` | ブラウザプレビューを WebKit で開いて撮る |
@@ -175,8 +191,19 @@ npm run tauri build -- --bundles nsis
 を行う。4 があるため、幹のレーンが右へ流れていかず `git log --graph` と同じ列配置になる。
 描画は行ごとに独立した SVG を持たせ、行の上半分（合流）と下半分（分岐）を描く。
 
+### 自動更新の仕組み
+
+`repo_fingerprint` が返す「全 ref のダイジェスト + ワークツリー数」を 5 秒ごとに
+比べ、変わったときだけ読み直す。選択中のコミットは維持される
+（消えていた場合は先頭に戻る）。画面が隠れている間はポーリングを止める。
+
+指紋に**作業ツリーの状態は含めない**。`git status` 相当の走査は大きいリポジトリで
+重く、数秒ごとに回すには向かないため。未コミットの変更の件数だけ 15 秒間隔で
+別に取り直している。
+
 ## 現状の制限
 
 - 読み取り専用。チェックアウトやコミットなどの操作は未実装
 - 表示は最新 500 件まで（`src/App.tsx` の `COMMIT_LIMIT`）
-- 差分表示は未実装
+- 差分は 1 ファイル 4000 行で打ち切る（`src-tauri/src/git.rs` の `MAX_DIFF_LINES`）
+- 差分はユニファイド表示のみ。サイドバイサイドは未実装

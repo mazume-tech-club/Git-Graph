@@ -801,3 +801,8 @@ body {
   flex: 1 0 auto;
   padding-right: 8px;
 }
+
+.repo-updated {
+  flex: 0 0 auto;
+  font-size: 11px;
+}

@@ -1,4 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use git2::{
     BranchType, Delta, Diff, DiffFindOptions, DiffLineType, DiffOptions, Oid, Patch, Repository,
@@ -773,6 +775,53 @@ fn strip_eol(text: &str) -> String {
 const LF: char = '\u{000A}';
 const CR: char = '\u{000D}';
 
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoFingerprint {
+    /// 全 ref の名前と指す先をまとめたダイジェスト
+    pub refs: String,
+    pub head: Option<String>,
+    pub worktrees: usize,
+}
+
+/// 変化を検知するためだけの軽い指紋。
+///
+/// 作業ツリーの状態は含めない。`statuses()` 相当の走査は大きいリポジトリで重く、
+/// 数秒ごとに呼ぶには向かないため。未コミットの変更は別の間隔で取り直す。
+pub fn fingerprint(path: &str) -> Result<RepoFingerprint, String> {
+    let repo = open(path)?;
+
+    let mut entries: Vec<String> = Vec::new();
+    if let Ok(references) = repo.references() {
+        for reference in references.flatten() {
+            let (Ok(name), Some(target)) = (reference.name(), reference.target()) else {
+                continue;
+            };
+            entries.push(format!("{name}={target}"));
+        }
+    }
+    // ref の列挙順は保証されないので、ダイジェストを安定させるために並べ替える
+    entries.sort_unstable();
+
+    let mut hasher = DefaultHasher::new();
+    for entry in &entries {
+        entry.hash(&mut hasher);
+    }
+
+    let worktrees = repo.worktrees().map(|w| w.iter().count()).unwrap_or(0);
+    worktrees.hash(&mut hasher);
+
+    Ok(RepoFingerprint {
+        refs: format!("{:016x}", hasher.finish()),
+        head: repo
+            .head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok())
+            .map(|c| c.id().to_string()),
+        worktrees,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1294,5 +1343,34 @@ mod tests {
 
         let none = file_diff(&path_of(&dir), None, Some(&ids[1]), "missing.txt").unwrap();
         assert!(none.hunks.is_empty());
+    }
+
+    #[test]
+    fn fingerprint_changes_only_when_refs_change() {
+        let dir = file_fixture();
+        let before = fingerprint(&path_of(&dir)).unwrap();
+
+        // 読み直しただけなら変わらない
+        let again = fingerprint(&path_of(&dir)).unwrap();
+        assert_eq!(before.refs, again.refs);
+        assert_eq!(before.head, again.head);
+
+        // 作業ツリーだけを汚しても指紋は変わらない（ref を見ていないため）
+        std::fs::write(dir.path().join("untracked.txt"), "x").unwrap();
+        assert_eq!(fingerprint(&path_of(&dir)).unwrap().refs, before.refs);
+
+        // コミットすると変わる
+        let repo = Repository::open(dir.path()).unwrap();
+        write_and_commit(&repo, &[("d.txt", Some("d"))], "d.txt を追加", 4_000);
+        let after = fingerprint(&path_of(&dir)).unwrap();
+        assert_ne!(after.refs, before.refs);
+        assert_ne!(after.head, before.head);
+    }
+
+    #[test]
+    fn fingerprint_counts_worktrees() {
+        let (dir, _outside) = fixture_with_worktree();
+        assert_eq!(fingerprint(&path_of(&dir)).unwrap().worktrees, 1);
+        assert_eq!(fingerprint(&path_of(&fixture())).unwrap().worktrees, 0);
     }
 }

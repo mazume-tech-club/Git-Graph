@@ -8,6 +8,7 @@ import {
   listWorktrees,
   openRepository,
   pickRepository,
+  repoFingerprint,
   startupRepository,
 } from "./api";
 import { CommitList } from "./components/CommitList";
@@ -21,6 +22,10 @@ const LAST_REPO_KEY = "git-graph:last-repo";
 const SIDEBAR_WIDTH_KEY = "git-graph:sidebar-width";
 const SIDEBAR_MIN = 260;
 const SIDEBAR_MAX = 720;
+/** ref の変化を見に行く間隔 */
+const REFRESH_INTERVAL_MS = 5_000;
+/** 未コミットの変更を数え直す間隔。ref より重いので間隔を広くとる */
+const WORKTREE_INTERVAL_MS = 15_000;
 
 function readStoredWidth(): number {
   const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
@@ -42,11 +47,17 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(readStoredWidth);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const contentRef = useRef<HTMLElement>(null);
 
-  /** `silent` のときは失敗してもエラーを出さない（起動時の自動復元用） */
-  const load = useCallback(async (path: string, silent = false) => {
-    setLoading(true);
+  /**
+   * リポジトリを読み直す。
+   * - `silent` … 失敗してもエラーを出さない（起動時の自動復元用）
+   * - `keepSelection` … 選択中のコミットを維持する（自動更新用）
+   */
+  const load = useCallback(
+    async (path: string, { silent = false, keepSelection = false } = {}) => {
+    if (!keepSelection) setLoading(true);
     setError(null);
     try {
       const info = await openRepository(path);
@@ -62,9 +73,17 @@ function App() {
       setBranches(branchList);
       setWorktrees(worktreeList);
       setWorktreeChanges(changes);
-      setSelectedId(list.length > 0 ? list[0].id : null);
-      setWorktreeSelected(false);
-      setCompareBase(null);
+      setUpdatedAt(Date.now());
+      if (keepSelection) {
+        // 選択中のコミットが消えていたら先頭に戻す
+        setSelectedId((prev) =>
+          prev && list.some((c) => c.id === prev) ? prev : (list[0]?.id ?? null),
+        );
+      } else {
+        setSelectedId(list.length > 0 ? list[0].id : null);
+        setWorktreeSelected(false);
+        setCompareBase(null);
+      }
       localStorage.setItem(LAST_REPO_KEY, info.path);
     } catch (e) {
       if (silent) {
@@ -81,7 +100,9 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+    },
+    [],
+  );
 
   // 起動時引数のリポジトリを開く。無ければ前回開いたものを復元する
   useEffect(() => {
@@ -92,7 +113,7 @@ function App() {
         return;
       }
       const last = localStorage.getItem(LAST_REPO_KEY);
-      if (last) await load(last, true);
+      if (last) await load(last, { silent: true });
     })();
   }, [load]);
 
@@ -145,20 +166,58 @@ function App() {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
   }, [sidebarWidth]);
 
+  const repoPath = repo?.path ?? null;
+
+  // ref が変わったら読み直す。画面が隠れている間は止める
+  useEffect(() => {
+    if (!repoPath) return;
+    let stopped = false;
+    let previous: string | null = null;
+
+    const tick = async () => {
+      if (stopped || document.visibilityState === "hidden") return;
+      try {
+        const fp = await repoFingerprint(repoPath);
+        const key = `${fp.refs}:${fp.head}:${fp.worktrees}`;
+        if (previous !== null && key !== previous) {
+          await load(repoPath, { silent: true, keepSelection: true });
+        }
+        previous = key;
+      } catch {
+        // 一時的な失敗（読み込み中の ref など）は次の周期に任せる
+      }
+    };
+
+    void tick();
+    const id = window.setInterval(tick, REFRESH_INTERVAL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [repoPath, load]);
+
+  // 未コミットの変更の件数だけを定期的に取り直す
+  useEffect(() => {
+    if (!repoPath) return;
+    let stopped = false;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void diffSummary(repoPath, null, null)
+        .then((s) => !stopped && setWorktreeChanges(s))
+        .catch(() => undefined);
+    }, WORKTREE_INTERVAL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [repoPath]);
+
   return (
     <div className="app">
       <header className="toolbar">
         <button type="button" onClick={chooseRepo} disabled={loading}>
           リポジトリを開く
         </button>
-        <button
-          type="button"
-          onClick={() => repo && void load(repo.path)}
-          disabled={loading || !repo}
-        >
-          再読み込み
-        </button>
-
         {repo && (
           <div className="repo-info">
             <span className="repo-path" title={repo.path}>
@@ -172,6 +231,11 @@ function App() {
               {commits.length}
               {commits.length >= COMMIT_LIMIT ? `+ (上限 ${COMMIT_LIMIT})` : ""} commits
             </span>
+            {updatedAt !== null && (
+              <span className="repo-updated" title="変更があると自動で読み直します">
+                更新 {new Date(updatedAt).toLocaleTimeString()}
+              </span>
+            )}
           </div>
         )}
       </header>

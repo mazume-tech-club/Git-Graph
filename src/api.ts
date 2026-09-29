@@ -3,6 +3,7 @@ import type {
   Commit,
   DiffSummary,
   FileDiff,
+  RepoFingerprint,
   RepoInfo,
   WorktreeInfo,
 } from "./types";
@@ -88,6 +89,13 @@ export async function fileDiff(
   return isTauri
     ? invokeTauri<FileDiff>("file_diff", { path, from, to, file })
     : fetchDev<FileDiff>("file_diff", optional({ path, from, to, file }));
+}
+
+/** 変化の検知に使う軽い指紋。定期的に呼ぶ。 */
+export async function repoFingerprint(path: string): Promise<RepoFingerprint> {
+  return isTauri
+    ? invokeTauri<RepoFingerprint>("repo_fingerprint", { path })
+    : fetchDev<RepoFingerprint>("repo_fingerprint", { path });
 }
 
 /** null のクエリパラメータは送らない（Rust 側の Option に合わせる） */

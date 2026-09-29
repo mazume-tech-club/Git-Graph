@@ -423,6 +423,33 @@ export function fileDiff(path, from, to, file) {
 }
 
 /**
+ * 変化の検知に使う軽い指紋。Rust 側（fingerprint）と同じ考え方で、
+ * ref の一覧とワークツリー数だけを見る。作業ツリーの状態は含めない。
+ *
+ * ハッシュ値そのものは Rust 側と一致しないが、同一プロセス内で
+ * 前回値と比べるだけなので問題ない。
+ */
+export function repoFingerprint(path) {
+  const info = repoInfo(path);
+  const raw = git(info.path, ["for-each-ref", "--format=%(refname)=%(objectname)"]).trim();
+  const entries = raw === "" ? [] : raw.split("\n").sort();
+  const worktrees = Math.max(0, listWorktrees(info.path).length - 1);
+
+  let hash = 0;
+  for (const entry of [...entries, String(worktrees)]) {
+    for (let i = 0; i < entry.length; i += 1) {
+      hash = (Math.imul(hash, 31) + entry.charCodeAt(i)) | 0;
+    }
+  }
+
+  return {
+    refs: (hash >>> 0).toString(16).padStart(8, "0"),
+    head: info.headCommit,
+    worktrees,
+  };
+}
+
+/**
  * Vite の開発サーバに差し込むミドルウェア。
  * Tauri のコマンドと 1 対 1 で対応させてある。
  */
@@ -462,6 +489,8 @@ export function gitApiMiddleware(req, res, next) {
             url.searchParams.get("file") ?? "",
           ),
         );
+      case "/__git/repo_fingerprint":
+        return send(200, repoFingerprint(url.searchParams.get("path") ?? "."));
       case "/__git/list_branches":
         return send(200, listBranches(url.searchParams.get("path") ?? "."));
       case "/__git/list_worktrees":

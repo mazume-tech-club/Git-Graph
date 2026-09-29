@@ -110,3 +110,10 @@ export type FileDiff = {
   /** 行数が多すぎて打ち切ったか */
   truncated: boolean;
 };
+
+export type RepoFingerprint = {
+  /** 全 ref をまとめたダイジェスト */
+  refs: string;
+  head: string | null;
+  worktrees: number;
+};
