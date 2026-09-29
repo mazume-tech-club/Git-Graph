@@ -153,6 +153,21 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 その場合は `tray_by_id("main")` が `None` になるので × で通常どおり終了する。
 閉じられなくなるのを避けるため。
 
+### 自動更新（アプリ本体）
+
+`tauri-plugin-updater` を使い、Gitea のリリースから新しい版を取得する。
+
+- 更新情報は main ブランチの `latest.json`。raw URL で配信するのでタグに依存しない
+  （`http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/raw/branch/main/latest.json`）
+- 署名検証は必須。公開鍵は `tauri.conf.json` の `plugins.updater.pubkey`
+- **秘密鍵は `~/.tauri/git-graph-updater.key`。リポジトリには入っていない**。
+  失うと以降の更新を配信できなくなるのでバックアップすること
+- 起動時に確認し、見つかったら通知バナーを出す。適用は利用者が押したときだけ。
+  作業中に勝手に再起動させないため
+- 更新サーバに届かない場合は黙って無視する（使えなくなる方が困るため）
+- 組織 `asuzacfoods` を public にしたことで匿名取得できる。internal のままだと
+  認証が必要になり、トークンをアプリに埋め込む羽目になるので戻してはいけない
+
 ## 落とし穴
 
 - **PowerShell に `\` 行継続のコマンドを渡さない。** 利用者は PowerShell を使う。
@@ -170,18 +185,30 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 
 ## リリース手順
 
-Gitea（`gitea` リモート、internal）に公開している。GitHub（`origin`）は public。
+Gitea（`gitea` リモート）に公開している。自動更新のため組織ごと public にしてあり、
+匿名でリリース資産を取得できる。GitHub（`origin`）にも同じソースがある。
 
 ```powershell
 # 1. バージョンを更新（package.json / package-lock.json / Cargo.toml / tauri.conf.json）
-# 2. ビルド
+
+# 2. 署名付きでビルド。鍵を渡さないと .sig が出ず、自動更新が配信できない
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\git-graph-updater.key"
 npx tauri build --bundles nsis
+
 # 3. タグを作って push
 git tag -a v1.2.0 -F <メッセージファイル>
 git push gitea main; git push gitea v1.2.0
+
 # 4. リリース作成（tea CLI）
 tea releases create --login asuzac --repo asuzacfoods/Git-Graph --tag v1.2.0 --title "..." --note-file <本文> --asset "src-tauri/target/release/bundle/nsis/Git Graph_1.2.0_x64-setup.exe"
+
+# 5. 更新情報を作って push。これをしないと既存の利用者に更新が届かない
+node scripts/make-latest-json.mjs 1.2.0 <本文>
+git add latest.json; git commit -m "latest.json を v1.2.0 に更新"; git push gitea main
 ```
+
+`latest.json` は main ブランチにある必要がある。手順 5 を忘れるとリリースはできても
+自動更新だけ動かない状態になる。
 
 MSI は現在ビルドできない。`bundle/msi/` の古いファイルがロックされており、
 上書き・削除がアクセス拒否になる。再起動して削除すれば復旧する見込み。
