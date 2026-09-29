@@ -1,4 +1,11 @@
-import type { BranchInfo, Commit, RepoInfo, WorktreeInfo } from "./types";
+import type {
+  BranchInfo,
+  Commit,
+  DiffSummary,
+  FileDiff,
+  RepoInfo,
+  WorktreeInfo,
+} from "./types";
 
 /**
  * Tauri と、ブラウザでの開発プレビューの両方から同じ形で呼べるようにした層。
@@ -53,6 +60,41 @@ export async function listWorktrees(path: string): Promise<WorktreeInfo[]> {
   return isTauri
     ? invokeTauri<WorktreeInfo[]>("list_worktrees", { path })
     : fetchDev<WorktreeInfo[]>("list_worktrees", { path });
+}
+
+/**
+ * 変更されたファイルの一覧。
+ *
+ * `to` を省略すると作業ツリーとの比較、`from` を省略すると `to` の第一親との比較。
+ * 両方指定すれば任意の 2 コミット間を比較できる。
+ */
+export async function diffSummary(
+  path: string,
+  from: string | null,
+  to: string | null,
+): Promise<DiffSummary> {
+  return isTauri
+    ? invokeTauri<DiffSummary>("diff_summary", { path, from, to })
+    : fetchDev<DiffSummary>("diff_summary", optional({ path, from, to }));
+}
+
+/** 1 ファイル分の差分。範囲の指定方法は diffSummary と同じ。 */
+export async function fileDiff(
+  path: string,
+  from: string | null,
+  to: string | null,
+  file: string,
+): Promise<FileDiff> {
+  return isTauri
+    ? invokeTauri<FileDiff>("file_diff", { path, from, to, file })
+    : fetchDev<FileDiff>("file_diff", optional({ path, from, to, file }));
+}
+
+/** null のクエリパラメータは送らない（Rust 側の Option に合わせる） */
+function optional(params: Record<string, string | null>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== null && v !== ""),
+  ) as Record<string, string>;
 }
 
 /** リポジトリを選ばせる。ブラウザではフォルダ選択が使えないのでパスを入力してもらう */

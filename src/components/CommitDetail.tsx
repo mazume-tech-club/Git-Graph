@@ -1,16 +1,30 @@
+import { DiffPane } from "./DiffPane";
 import { formatCommitDate, formatOffset } from "../format";
 import type { Commit } from "../types";
 import { RefBadge } from "./RefBadge";
 
 type Props = {
   commit: Commit | null;
+  repoPath: string;
+  /** 比較の基準に固定したコミット */
+  compareBase: string | null;
   onSelectParent: (id: string) => void;
+  onSetCompareBase: (id: string | null) => void;
 };
 
-export function CommitDetail({ commit, onSelectParent }: Props) {
+export function CommitDetail({
+  commit,
+  repoPath,
+  compareBase,
+  onSelectParent,
+  onSetCompareBase,
+}: Props) {
   if (!commit) {
     return <div className="detail empty">コミットを選択すると詳細が表示されます</div>;
   }
+
+  // 自分自身が基準のときは通常表示（第一親との差分）に戻す
+  const comparing = compareBase !== null && compareBase !== commit.id;
 
   return (
     <div className="detail">
@@ -58,6 +72,25 @@ export function CommitDetail({ commit, onSelectParent }: Props) {
       </dl>
 
       {commit.body.trim() !== "" && <pre className="detail-body">{commit.body.trim()}</pre>}
+
+      <div className="compare-bar">
+        {comparing ? (
+          <>
+            <span className="mono">
+              {compareBase.slice(0, 7)} ↔ {commit.id.slice(0, 7)}
+            </span>
+            <button type="button" onClick={() => onSetCompareBase(null)}>
+              比較を解除
+            </button>
+          </>
+        ) : (
+          <button type="button" onClick={() => onSetCompareBase(commit.id)}>
+            比較対象に設定
+          </button>
+        )}
+      </div>
+
+      <DiffPane repoPath={repoPath} from={comparing ? compareBase : null} to={commit.id} />
     </div>
   );
 }

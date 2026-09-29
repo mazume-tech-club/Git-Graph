@@ -1,4 +1,5 @@
 import { BranchList } from "./BranchList";
+import { DiffPane } from "./DiffPane";
 import { CommitDetail } from "./CommitDetail";
 import { WorktreeList } from "./WorktreeList";
 import type { BranchInfo, Commit, WorktreeInfo } from "../types";
@@ -11,8 +12,13 @@ type Props = {
   branches: BranchInfo[];
   worktrees: WorktreeInfo[];
   commit: Commit | null;
+  repoPath: string;
+  compareBase: string | null;
+  /** コミットではなく作業ツリーの変更を選んでいるか */
+  worktreeSelected: boolean;
   onSelectCommit: (commitId: string) => void;
   onSelectParent: (commitId: string) => void;
+  onSetCompareBase: (commitId: string | null) => void;
 };
 
 const TABS: { id: SidebarTab; label: string }[] = [
@@ -27,8 +33,12 @@ export function Sidebar({
   branches,
   worktrees,
   commit,
+  repoPath,
+  compareBase,
+  worktreeSelected,
   onSelectCommit,
   onSelectParent,
+  onSetCompareBase,
 }: Props) {
   const count = (id: SidebarTab) =>
     id === "branches" ? branches.length : id === "worktrees" ? worktrees.length : null;
@@ -62,8 +72,20 @@ export function Sidebar({
         {tab === "worktrees" && (
           <WorktreeList worktrees={worktrees} onSelect={onSelectCommit} />
         )}
-        {tab === "detail" && (
-          <CommitDetail commit={commit} onSelectParent={onSelectParent} />
+        {tab === "detail" && worktreeSelected && (
+          <div className="detail">
+            <h2 className="detail-summary">作業ツリーの変更</h2>
+            <DiffPane repoPath={repoPath} from={null} to={null} />
+          </div>
+        )}
+        {tab === "detail" && !worktreeSelected && (
+          <CommitDetail
+            commit={commit}
+            repoPath={repoPath}
+            compareBase={compareBase}
+            onSelectParent={onSelectParent}
+            onSetCompareBase={onSetCompareBase}
+          />
         )}
       </div>
     </aside>

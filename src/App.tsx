@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  diffSummary,
   isBrowserPreview,
   listBranches,
   listCommits,
@@ -12,7 +13,7 @@ import {
 import { CommitList } from "./components/CommitList";
 import { Sidebar, type SidebarTab } from "./components/Sidebar";
 import { buildGraph } from "./graph/lanes";
-import type { BranchInfo, Commit, RepoInfo, WorktreeInfo } from "./types";
+import type { BranchInfo, Commit, DiffSummary, RepoInfo, WorktreeInfo } from "./types";
 import "./App.css";
 
 const COMMIT_LIMIT = 500;
@@ -33,6 +34,9 @@ function App() {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [worktreeSelected, setWorktreeSelected] = useState(false);
+  const [compareBase, setCompareBase] = useState<string | null>(null);
+  const [worktreeChanges, setWorktreeChanges] = useState<DiffSummary | null>(null);
   const [tab, setTab] = useState<SidebarTab>("branches");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,16 +50,21 @@ function App() {
     setError(null);
     try {
       const info = await openRepository(path);
-      const [list, branchList, worktreeList] = await Promise.all([
+      const [list, branchList, worktreeList, changes] = await Promise.all([
         listCommits(info.path, COMMIT_LIMIT),
         listBranches(info.path),
         listWorktrees(info.path),
+        // 未コミットの変更。件数だけ先に出して、中身は開いたときに取る
+        diffSummary(info.path, null, null).catch(() => null),
       ]);
       setRepo(info);
       setCommits(list);
       setBranches(branchList);
       setWorktrees(worktreeList);
+      setWorktreeChanges(changes);
       setSelectedId(list.length > 0 ? list[0].id : null);
+      setWorktreeSelected(false);
+      setCompareBase(null);
       localStorage.setItem(LAST_REPO_KEY, info.path);
     } catch (e) {
       if (silent) {
@@ -67,6 +76,7 @@ function App() {
       setCommits([]);
       setBranches([]);
       setWorktrees([]);
+      setWorktreeChanges(null);
       setSelectedId(null);
     } finally {
       setLoading(false);
@@ -105,6 +115,7 @@ function App() {
         return;
       }
       setNotice(null);
+      setWorktreeSelected(false);
       setSelectedId(id);
       requestAnimationFrame(() => {
         document.getElementById(`commit-${id}`)?.scrollIntoView({ block: "center" });
@@ -183,9 +194,16 @@ function App() {
         <main className="content" ref={contentRef}>
           <CommitList
             graph={graph}
-            selectedId={selectedId}
+            selectedId={worktreeSelected ? null : selectedId}
             onSelect={(id) => {
+              setWorktreeSelected(false);
               setSelectedId(id);
+              setTab("detail");
+            }}
+            worktreeChanges={worktreeChanges?.files.length ?? 0}
+            worktreeSelected={worktreeSelected}
+            onSelectWorktree={() => {
+              setWorktreeSelected(true);
               setTab("detail");
             }}
           />
@@ -202,8 +220,12 @@ function App() {
               branches={branches}
               worktrees={worktrees}
               commit={selected}
+              repoPath={repo.path}
+              compareBase={compareBase}
+              worktreeSelected={worktreeSelected}
               onSelectCommit={revealCommit}
               onSelectParent={revealCommit}
+              onSetCompareBase={setCompareBase}
             />
           </div>
         </main>

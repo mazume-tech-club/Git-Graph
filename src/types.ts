@@ -61,3 +61,52 @@ export type WorktreeInfo = {
   /** 作業ディレクトリが失われている等で git worktree prune の対象になるか */
   isPrunable: boolean;
 };
+
+export type ChangeStatus =
+  | "added"
+  | "deleted"
+  | "modified"
+  | "renamed"
+  | "copied"
+  | "typeChange"
+  | "untracked"
+  | "other";
+
+export type FileChange = {
+  path: string;
+  /** リネーム / コピー元のパス */
+  oldPath: string | null;
+  status: ChangeStatus;
+  insertions: number;
+  deletions: number;
+  isBinary: boolean;
+};
+
+export type DiffSummary = {
+  files: FileChange[];
+  insertions: number;
+  deletions: number;
+  /** マージコミットを第一親と比較しているか */
+  againstFirstParent: boolean;
+};
+
+export type LineKind = "context" | "addition" | "deletion";
+
+export type DiffLine = {
+  kind: LineKind;
+  oldLineno: number | null;
+  newLineno: number | null;
+  content: string;
+};
+
+export type DiffHunk = {
+  header: string;
+  lines: DiffLine[];
+};
+
+export type FileDiff = {
+  hunks: DiffHunk[];
+  isBinary: boolean;
+  /** 行数が多すぎて打ち切ったか */
+  truncated: boolean;
+};

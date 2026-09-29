@@ -584,3 +584,220 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
 }
+
+/* ---- 未コミットの変更（コミット一覧の擬似行） ---- */
+
+.commit-row.worktree-changes {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.badge-uncommitted {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  color: #fff;
+  background: #f6a609;
+  border-radius: 8px;
+}
+
+/* ---- 比較対象の固定 ---- */
+
+.compare-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0 4px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.compare-bar button {
+  padding: 2px 8px;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.compare-bar button:hover {
+  background: var(--bg-hover);
+}
+
+/* ---- 差分 ---- */
+
+.diff-pane {
+  margin-top: 8px;
+}
+
+.diff-note {
+  padding: 8px 0;
+  color: var(--fg-muted);
+}
+
+.diff-note.error {
+  color: #ffb4b4;
+}
+
+.diff-note-inline {
+  padding: 0 5px;
+  color: #f6a609;
+  border: 1px solid #f6a609;
+  border-radius: 8px;
+}
+
+.diff-summary-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.added {
+  color: #31c48d;
+}
+
+.removed {
+  color: #e05561;
+}
+
+.file-list {
+  margin: 0;
+  list-style: none;
+  padding-inline-start: 0;
+}
+
+.file-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  padding: 3px 0;
+  font: inherit;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.file-row:hover {
+  background: var(--bg-hover);
+}
+
+.file-row.selected {
+  background: var(--bg-selected);
+}
+
+.file-status {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 15px;
+  border: 1px solid currentcolor;
+  border-radius: 6px;
+}
+
+.status-added,
+.status-untracked {
+  color: #31c48d;
+}
+
+.status-deleted {
+  color: #e05561;
+}
+
+.status-modified {
+  color: #4c8dff;
+}
+
+.status-renamed,
+.status-copied,
+.status-typeChange,
+.status-other {
+  color: #a78bfa;
+}
+
+.file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.file-counts {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* 差分本体。行は折り返さず横スクロールさせる */
+.diff-body {
+  margin-top: 8px;
+  overflow-x: auto;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.hunk-header {
+  padding: 2px 6px;
+  color: var(--fg-muted);
+  background: var(--bg-hover);
+}
+
+.diff-line {
+  display: flex;
+  white-space: pre;
+}
+
+.diff-line.addition {
+  background: rgb(49 196 141 / 12%);
+}
+
+.diff-line.deletion {
+  background: rgb(224 85 97 / 12%);
+}
+
+.diff-line .lineno {
+  flex: 0 0 38px;
+  padding-right: 6px;
+  color: var(--fg-muted);
+  text-align: right;
+  user-select: none;
+}
+
+.diff-line .sign {
+  flex: 0 0 12px;
+  text-align: center;
+  user-select: none;
+}
+
+.diff-line.addition .sign {
+  color: #31c48d;
+}
+
+.diff-line.deletion .sign {
+  color: #e05561;
+}
+
+.diff-line .code {
+  flex: 1 0 auto;
+  padding-right: 8px;
+}
