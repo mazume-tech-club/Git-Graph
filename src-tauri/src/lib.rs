@@ -54,6 +54,16 @@ fn file_diff(
     git::file_diff(&path, from.as_deref(), to.as_deref(), &file)
 }
 
+/// ブランチの説明を設定する。空文字を渡すと設定を消す。
+#[tauri::command]
+fn set_branch_description(
+    path: String,
+    branch: String,
+    description: Option<String>,
+) -> Result<(), String> {
+    git::set_branch_description(&path, &branch, description.as_deref())
+}
+
 /// 変化の検知に使う軽い指紋。定期的に呼ぶ想定。
 #[tauri::command]
 fn repo_fingerprint(path: String) -> Result<RepoFingerprint, String> {
@@ -93,6 +103,7 @@ pub fn run() {
             diff_summary,
             file_diff,
             repo_fingerprint,
+            set_branch_description,
             startup_repository
         ])
         .setup(|app| {

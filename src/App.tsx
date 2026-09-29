@@ -9,6 +9,7 @@ import {
   openRepository,
   pickRepository,
   repoFingerprint,
+  setBranchDescription,
   startupRepository,
 } from "./api";
 import { CommitList } from "./components/CommitList";
@@ -144,6 +145,28 @@ function App() {
       });
     },
     [commits],
+  );
+
+  /**
+   * ブランチのメモを保存して一覧を取り直す。
+   * ref は変わらないので自動更新では拾えないため、ここで明示的に読み直す。
+   */
+  const editDescription = useCallback(
+    async (branch: string, description: string | null) => {
+      if (!repo) return;
+      try {
+        await setBranchDescription(repo.path, branch, description);
+        const [branchList, worktreeList] = await Promise.all([
+          listBranches(repo.path),
+          listWorktrees(repo.path),
+        ]);
+        setBranches(branchList);
+        setWorktrees(worktreeList);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [repo],
   );
 
   // サイドバーの幅をドラッグで変える
@@ -296,6 +319,7 @@ function App() {
               onSelectCommit={revealCommit}
               onSelectParent={revealCommit}
               onSetCompareBase={setCompareBase}
+              onEditDescription={(b, d) => void editDescription(b, d)}
             />
           </div>
         </main>
