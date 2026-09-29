@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use git2::{BranchType, Repository, Sort};
+use git2::{BranchType, Repository, Sort, WorktreeLockStatus};
 use serde::Serialize;
 
 /// リポジトリを開いた直後に返す概要情報。
@@ -51,6 +51,44 @@ pub struct CommitInfo {
     pub parents: Vec<String>,
     /// このコミットを指す ref のラベル
     pub refs: Vec<RefLabel>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchInfo {
+    pub name: String,
+    pub kind: RefKind,
+    /// ブランチが指すコミット ID
+    pub target: String,
+    pub is_head: bool,
+    /// 追跡しているリモートブランチ名
+    pub upstream: Option<String>,
+    /// HEAD に取り込み済みか（HEAD から到達できるか）
+    pub merged: bool,
+    /// HEAD を基準にした差分。ahead = HEAD に無いコミット数
+    pub ahead: usize,
+    pub behind: usize,
+    pub last_commit_time: i64,
+    pub last_commit_summary: String,
+    pub last_commit_author: String,
+    /// このブランチをチェックアウトしているワークツリーのパス
+    pub worktree_path: Option<String>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeInfo {
+    pub name: String,
+    pub path: String,
+    /// チェックアウト中のブランチ名。detached HEAD なら None
+    pub branch: Option<String>,
+    pub head: Option<String>,
+    pub is_main: bool,
+    pub is_detached: bool,
+    pub is_locked: bool,
+    pub lock_reason: Option<String>,
+    /// 作業ディレクトリが失われている等で、git worktree prune の対象になるか
+    pub is_prunable: bool,
 }
 
 fn open(path: &str) -> Result<Repository, String> {
@@ -227,10 +265,211 @@ pub fn list_commits(path: &str, limit: usize) -> Result<Vec<CommitInfo>, String>
     Ok(commits)
 }
 
+/// ブランチ名 -> それをチェックアウトしているワークツリーのパス
+fn worktree_by_branch(repo: &Repository) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+
+    // メインワークツリー（commondir の親）も対象に含める
+    if let Some(dir) = main_workdir(repo) {
+        if let Ok(main) = Repository::open(&dir) {
+            if let Some(name) = checked_out_branch(&main) {
+                map.insert(name, dir);
+            }
+        }
+    }
+
+    let Ok(names) = repo.worktrees() else {
+        return map;
+    };
+    for name in names.iter().filter_map(|n| n.ok().flatten()) {
+        let Ok(worktree) = repo.find_worktree(name) else {
+            continue;
+        };
+        let path = worktree.path().to_string_lossy().to_string();
+        if let Ok(wt_repo) = Repository::open_from_worktree(&worktree) {
+            if let Some(branch) = checked_out_branch(&wt_repo) {
+                map.insert(branch, path);
+            }
+        }
+    }
+
+    map
+}
+
+/// detached HEAD でなければ、チェックアウト中のブランチ名を返す
+fn checked_out_branch(repo: &Repository) -> Option<String> {
+    if repo.head_detached().unwrap_or(false) {
+        return None;
+    }
+    repo.head().ok()?.shorthand().ok().map(str::to_string)
+}
+
+/// メインワークツリーの作業ディレクトリ。commondir は `<main>/.git` を指す
+fn main_workdir(repo: &Repository) -> Option<String> {
+    let common = repo.commondir();
+    let dir = if common.ends_with(".git") {
+        common.parent()?
+    } else {
+        common
+    };
+    Some(
+        dir.to_string_lossy()
+            .trim_end_matches(['/', '\\'])
+            .to_string(),
+    )
+}
+
+/// ローカル / リモート追跡ブランチの一覧。HEAD との関係も付けて返す。
+pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
+    let repo = open(path)?;
+    if repo.is_empty().unwrap_or(false) {
+        return Ok(Vec::new());
+    }
+
+    let head_oid = repo
+        .head()
+        .ok()
+        .and_then(|h| h.peel_to_commit().ok())
+        .map(|c| c.id());
+    let worktrees = worktree_by_branch(&repo);
+
+    let mut branches = Vec::new();
+    for branch_type in [BranchType::Local, BranchType::Remote] {
+        let Ok(iter) = repo.branches(Some(branch_type)) else {
+            continue;
+        };
+        for entry in iter.flatten() {
+            let (branch, _) = entry;
+            let Ok(Some(name)) = branch.name() else {
+                continue;
+            };
+            let name = name.to_string();
+            let Some(target) = branch.get().target() else {
+                continue;
+            };
+            let Ok(commit) = repo.find_commit(target) else {
+                continue;
+            };
+
+            // HEAD との差分。ahead が 0 なら HEAD に取り込み済み
+            let (ahead, behind) = match head_oid {
+                Some(head) => repo.graph_ahead_behind(target, head).unwrap_or((0, 0)),
+                None => (0, 0),
+            };
+
+            let is_local = branch_type == BranchType::Local;
+            branches.push(BranchInfo {
+                kind: if is_local {
+                    if branch.is_head() {
+                        RefKind::Head
+                    } else {
+                        RefKind::LocalBranch
+                    }
+                } else {
+                    RefKind::RemoteBranch
+                },
+                is_head: branch.is_head(),
+                upstream: branch
+                    .upstream()
+                    .ok()
+                    .and_then(|u| u.name().ok().flatten().map(str::to_string)),
+                merged: head_oid.is_some() && ahead == 0,
+                ahead,
+                behind,
+                last_commit_time: commit.time().seconds(),
+                last_commit_summary: commit
+                    .summary()
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default()
+                    .to_string(),
+                last_commit_author: commit.author().name().unwrap_or_default().to_string(),
+                worktree_path: worktrees.get(&name).cloned(),
+                target: target.to_string(),
+                name,
+            });
+        }
+    }
+
+    Ok(branches)
+}
+
+/// ワークツリーの一覧。メインワークツリーを先頭に置く。
+pub fn list_worktrees(path: &str) -> Result<Vec<WorktreeInfo>, String> {
+    let repo = open(path)?;
+    let mut list = Vec::new();
+
+    if let Some(dir) = main_workdir(&repo) {
+        let main = Repository::open(&dir).ok();
+        let (branch, head, is_detached) = match &main {
+            Some(r) => (
+                checked_out_branch(r),
+                r.head()
+                    .ok()
+                    .and_then(|h| h.peel_to_commit().ok())
+                    .map(|c| c.id().to_string()),
+                r.head_detached().unwrap_or(false),
+            ),
+            None => (None, None, false),
+        };
+        list.push(WorktreeInfo {
+            name: "(main)".to_string(),
+            path: dir,
+            branch,
+            head,
+            is_main: true,
+            is_detached,
+            is_locked: false,
+            lock_reason: None,
+            is_prunable: false,
+        });
+    }
+
+    let Ok(names) = repo.worktrees() else {
+        return Ok(list);
+    };
+    for name in names.iter().filter_map(|n| n.ok().flatten()) {
+        let Ok(worktree) = repo.find_worktree(name) else {
+            continue;
+        };
+        let (is_locked, lock_reason) = match worktree.is_locked() {
+            Ok(WorktreeLockStatus::Locked(reason)) => (true, reason),
+            _ => (false, None),
+        };
+        let wt_repo = Repository::open_from_worktree(&worktree).ok();
+        let (branch, head, is_detached) = match &wt_repo {
+            Some(r) => (
+                checked_out_branch(r),
+                r.head()
+                    .ok()
+                    .and_then(|h| h.peel_to_commit().ok())
+                    .map(|c| c.id().to_string()),
+                r.head_detached().unwrap_or(false),
+            ),
+            None => (None, None, false),
+        };
+
+        list.push(WorktreeInfo {
+            name: name.to_string(),
+            path: worktree.path().to_string_lossy().to_string(),
+            branch,
+            head,
+            is_main: false,
+            is_detached,
+            is_locked,
+            lock_reason,
+            // 作業ディレクトリが消えている場合などを拾う
+            is_prunable: worktree.validate().is_err(),
+        });
+    }
+
+    Ok(list)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use git2::{Commit, Oid, RepositoryInitOptions, Signature, Time};
+    use git2::{Commit, Oid, RepositoryInitOptions, Signature, Time, WorktreeAddOptions};
     use tempfile::TempDir;
 
     /// 全コミットで同じ（空の）ツリーを使う。ここで確かめたいのは履歴の形だけ。
@@ -403,5 +642,122 @@ mod tests {
         assert_eq!(merge.timestamp, 5_000);
         assert_eq!(merge.offset_minutes, 540);
         assert_eq!(merge.short_id, merge.id[..7]);
+    }
+
+    /// fixture() に「未マージのブランチ」と「リンクされたワークツリー」を足したもの。
+    ///
+    /// A -- B -- D -- M (main, HEAD)
+    ///       |\      /
+    ///       | `- C -'      (feature: マージ済み。ワークツリー wt-feature で開く)
+    ///       `--- U         (stale: 未マージ)
+    ///
+    /// 戻り値の 2 つ目はワークツリーの置き場所。落とすとディレクトリごと消えるので
+    /// テストが終わるまで保持する必要がある。
+    fn fixture_with_worktree() -> (TempDir, TempDir) {
+        let dir = fixture();
+        let outside = TempDir::new().unwrap();
+        let repo = Repository::open(dir.path()).unwrap();
+
+        // B から分岐したまま取り込まれていないブランチ
+        let b = repo
+            .revparse_single("main~2")
+            .unwrap()
+            .peel_to_commit()
+            .unwrap();
+        repo.branch("stale", &b, false).unwrap();
+        commit_on(&repo, "refs/heads/stale", "U", 6_000, &[&b]);
+
+        // feature ブランチを別のワークツリーでチェックアウトする
+        let reference = repo
+            .find_branch("feature", BranchType::Local)
+            .unwrap()
+            .into_reference();
+        let mut opts = WorktreeAddOptions::new();
+        opts.reference(Some(&reference));
+        let wt_path = outside.path().join("wt-feature");
+        repo.worktree("wt-feature", &wt_path, Some(&opts)).unwrap();
+
+        (dir, outside)
+    }
+
+    #[test]
+    fn list_branches_reports_merge_state_against_head() {
+        let (dir, _outside) = fixture_with_worktree();
+        let branches = list_branches(&path_of(&dir)).unwrap();
+        let by_name: HashMap<&str, &BranchInfo> =
+            branches.iter().map(|b| (b.name.as_str(), b)).collect();
+
+        let main = by_name["main"];
+        assert!(main.is_head);
+        assert!(main.merged);
+        assert_eq!((main.ahead, main.behind), (0, 0));
+
+        // C は M に取り込まれているので「マージ済み」
+        let feature = by_name["feature"];
+        assert!(!feature.is_head);
+        assert!(feature.merged, "feature は main にマージ済みのはず");
+        assert_eq!(feature.ahead, 0);
+
+        // U は main のどこからも辿れない
+        let stale = by_name["stale"];
+        assert!(!stale.merged, "stale は未マージのはず");
+        assert_eq!(stale.ahead, 1, "main に無いコミットは U の 1 件");
+        assert_eq!(stale.behind, 3, "stale に無いコミットは C/D/M の 3 件");
+        assert_eq!(stale.last_commit_summary, "U");
+        assert_eq!(stale.last_commit_time, 6_000);
+    }
+
+    #[test]
+    fn list_branches_links_branches_to_their_worktree() {
+        let (dir, _outside) = fixture_with_worktree();
+        let branches = list_branches(&path_of(&dir)).unwrap();
+        let by_name: HashMap<&str, &BranchInfo> =
+            branches.iter().map(|b| (b.name.as_str(), b)).collect();
+
+        // main はメインワークツリー、feature はリンクされたワークツリーで開かれている
+        assert!(by_name["main"].worktree_path.is_some());
+        let feature_wt = by_name["feature"].worktree_path.as_deref().unwrap();
+        assert!(
+            feature_wt.contains("wt-feature"),
+            "feature のワークツリーが取れていない: {feature_wt}"
+        );
+        // どこでも開かれていないブランチは None
+        assert_eq!(by_name["stale"].worktree_path, None);
+    }
+
+    #[test]
+    fn list_worktrees_includes_main_and_linked() {
+        let (dir, _outside) = fixture_with_worktree();
+        let worktrees = list_worktrees(&path_of(&dir)).unwrap();
+
+        assert_eq!(worktrees.len(), 2, "メイン + wt-feature の 2 つ");
+
+        let main = &worktrees[0];
+        assert!(main.is_main, "メインワークツリーが先頭に来る");
+        assert_eq!(main.branch.as_deref(), Some("main"));
+        assert!(!main.is_detached);
+        assert!(!main.is_prunable);
+
+        let linked = &worktrees[1];
+        assert!(!linked.is_main);
+        assert_eq!(linked.name, "wt-feature");
+        assert_eq!(linked.branch.as_deref(), Some("feature"));
+        assert!(!linked.is_locked);
+        assert!(linked.head.is_some());
+    }
+
+    #[test]
+    fn list_worktrees_returns_main_only_without_linked_worktrees() {
+        let dir = fixture();
+        let worktrees = list_worktrees(&path_of(&dir)).unwrap();
+        assert_eq!(worktrees.len(), 1);
+        assert!(worktrees[0].is_main);
+    }
+
+    #[test]
+    fn list_branches_on_empty_repository() {
+        let dir = TempDir::new().unwrap();
+        Repository::init(dir.path()).unwrap();
+        assert!(list_branches(&path_of(&dir)).unwrap().is_empty());
     }
 }
