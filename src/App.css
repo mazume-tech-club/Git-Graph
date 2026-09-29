@@ -813,8 +813,17 @@ body {
   flex-wrap: wrap;
 }
 
-.row-note {
+/* メモ（またはコミットメッセージ）と編集ボタンを 2 行目にまとめる */
+.branch-note-line {
+  display: flex;
   flex: 1 1 100%;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.row-note {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: 11px;
@@ -834,4 +843,39 @@ body {
 
 .worktree-age {
   margin-left: 4px;
+}
+
+/* ---- メモの編集 ---- */
+
+.note-edit {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg-muted);
+  visibility: hidden;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.branch-row:hover .note-edit,
+.branch-row:focus-within .note-edit {
+  visibility: visible;
+}
+
+.note-edit:hover {
+  color: var(--accent);
+}
+
+.note-input {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 1px 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
 }

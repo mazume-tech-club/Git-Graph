@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use git2::{
-    BranchType, Delta, Diff, DiffFindOptions, DiffLineType, DiffOptions, Oid, Patch, Repository,
-    Sort, Tree, WorktreeLockStatus,
+    BranchType, ConfigLevel, Delta, Diff, DiffFindOptions, DiffLineType, DiffOptions, ErrorCode,
+    Oid, Patch, Repository, Sort, Tree, WorktreeLockStatus,
 };
 use serde::Serialize;
 
@@ -886,6 +886,40 @@ pub fn fingerprint(path: &str) -> Result<RepoFingerprint, String> {
     })
 }
 
+/// ブランチの説明を設定する。空文字や None のときは設定を消す。
+///
+/// 書き込むのはリポジトリ配下の `.git/config` だけで、履歴には触れない。
+/// キーは `branch.<name>.description` に固定しており、任意の設定は書けない。
+pub fn set_branch_description(
+    path: &str,
+    branch: &str,
+    description: Option<&str>,
+) -> Result<(), String> {
+    let repo = open(path)?;
+
+    // 説明を付けられるのはローカルブランチだけ。存在確認も兼ねる
+    repo.find_branch(branch, BranchType::Local)
+        .map_err(|_| format!("ローカルブランチが見つかりません: {branch}"))?;
+
+    let key = format!("branch.{branch}.description");
+    let mut config = repo
+        .config()
+        .and_then(|c| c.open_level(ConfigLevel::Local))
+        .map_err(|e| format!("設定を開けません: {}", e.message()))?;
+
+    match description.map(str::trim).filter(|text| !text.is_empty()) {
+        Some(text) => config
+            .set_str(&key, text)
+            .map_err(|e| format!("説明を保存できません: {}", e.message())),
+        None => match config.remove(&key) {
+            // もともと未設定なら消す必要が無いので成功として扱う
+            Err(e) if e.code() == ErrorCode::NotFound => Ok(()),
+            Err(e) => Err(format!("説明を削除できません: {}", e.message())),
+            Ok(()) => Ok(()),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1488,5 +1522,61 @@ mod tests {
         let linked = worktrees.iter().find(|w| !w.is_main).unwrap();
         assert_eq!(linked.head_summary.as_deref(), Some("C"));
         assert_eq!(linked.head_time, Some(3_000));
+    }
+
+    #[test]
+    fn set_branch_description_writes_and_clears() {
+        let dir = fixture();
+        let path = path_of(&dir);
+
+        let description_of = |name: &str| -> Option<String> {
+            list_branches(&path)
+                .unwrap()
+                .into_iter()
+                .find(|b| b.name == name)
+                .and_then(|b| b.description)
+        };
+
+        set_branch_description(&path, "feature", Some("詳細ペインの作業用")).unwrap();
+        assert_eq!(
+            description_of("feature").as_deref(),
+            Some("詳細ペインの作業用")
+        );
+
+        // 上書きできる
+        set_branch_description(&path, "feature", Some("  前後の空白は落とす  ")).unwrap();
+        assert_eq!(
+            description_of("feature").as_deref(),
+            Some("前後の空白は落とす")
+        );
+
+        // 空文字を渡すと消える
+        set_branch_description(&path, "feature", Some("")).unwrap();
+        assert_eq!(description_of("feature"), None);
+
+        // 未設定のまま消しても成功扱い
+        set_branch_description(&path, "feature", None).unwrap();
+        assert_eq!(description_of("feature"), None);
+    }
+
+    #[test]
+    fn set_branch_description_writes_to_local_config_only() {
+        let dir = fixture();
+        set_branch_description(&path_of(&dir), "main", Some("幹")).unwrap();
+
+        // リポジトリ配下の .git/config にだけ書かれていること
+        let config = std::fs::read_to_string(dir.path().join(".git/config")).unwrap();
+        assert!(config.contains("description = 幹"), "{config}");
+    }
+
+    #[test]
+    fn set_branch_description_rejects_unknown_branch() {
+        let dir = fixture();
+        let err = set_branch_description(&path_of(&dir), "no-such-branch", Some("x")).unwrap_err();
+        assert!(err.contains("ローカルブランチが見つかりません"), "{err}");
+
+        // リモート追跡ブランチにも設定できない
+        let err = set_branch_description(&path_of(&dir), "origin/main", Some("x")).unwrap_err();
+        assert!(err.contains("ローカルブランチが見つかりません"), "{err}");
     }
 }

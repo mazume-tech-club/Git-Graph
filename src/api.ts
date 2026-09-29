@@ -91,6 +91,27 @@ export async function fileDiff(
     : fetchDev<FileDiff>("file_diff", optional({ path, from, to, file }));
 }
 
+/**
+ * ブランチの説明を設定する。null または空文字で設定を消す。
+ *
+ * ref は変わらないため自動更新の指紋では検知できない。
+ * 呼び出し側で一覧を取り直すこと。
+ */
+export async function setBranchDescription(
+  path: string,
+  branch: string,
+  description: string | null,
+): Promise<void> {
+  if (isTauri) {
+    await invokeTauri<void>("set_branch_description", { path, branch, description });
+    return;
+  }
+  await fetchDev<{ ok: boolean }>(
+    "set_branch_description",
+    optional({ path, branch, description: description ?? "" }),
+  );
+}
+
 /** 変化の検知に使う軽い指紋。定期的に呼ぶ。 */
 export async function repoFingerprint(path: string): Promise<RepoFingerprint> {
   return isTauri

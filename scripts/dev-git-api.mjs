@@ -496,6 +496,32 @@ export function repoFingerprint(path) {
 }
 
 /**
+ * ブランチの説明を設定する。空文字なら設定を消す。
+ * 書き込むのはリポジトリ配下の .git/config だけ。
+ */
+export function setBranchDescription(path, branch, description) {
+  const info = repoInfo(path);
+  try {
+    git(info.path, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
+  } catch {
+    throw new Error(`ローカルブランチが見つかりません: ${branch}`);
+  }
+
+  const key = `branch.${branch}.description`;
+  const text = (description ?? "").trim();
+  if (text === "") {
+    try {
+      git(info.path, ["config", "--local", "--unset", key]);
+    } catch {
+      // もともと未設定なら何もしない
+    }
+  } else {
+    git(info.path, ["config", "--local", key, text]);
+  }
+  return { ok: true };
+}
+
+/**
  * Vite の開発サーバに差し込むミドルウェア。
  * Tauri のコマンドと 1 対 1 で対応させてある。
  */
@@ -533,6 +559,15 @@ export function gitApiMiddleware(req, res, next) {
             url.searchParams.get("from"),
             url.searchParams.get("to"),
             url.searchParams.get("file") ?? "",
+          ),
+        );
+      case "/__git/set_branch_description":
+        return send(
+          200,
+          setBranchDescription(
+            url.searchParams.get("path") ?? ".",
+            url.searchParams.get("branch") ?? "",
+            url.searchParams.get("description"),
           ),
         );
       case "/__git/repo_fingerprint":

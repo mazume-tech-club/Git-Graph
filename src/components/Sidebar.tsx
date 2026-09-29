@@ -19,6 +19,7 @@ type Props = {
   onSelectCommit: (commitId: string) => void;
   onSelectParent: (commitId: string) => void;
   onSetCompareBase: (commitId: string | null) => void;
+  onEditDescription: (branch: string, description: string | null) => void;
 };
 
 const TABS: { id: SidebarTab; label: string }[] = [
@@ -39,6 +40,7 @@ export function Sidebar({
   onSelectCommit,
   onSelectParent,
   onSetCompareBase,
+  onEditDescription,
 }: Props) {
   const count = (id: SidebarTab) =>
     id === "branches" ? branches.length : id === "worktrees" ? worktrees.length : null;
@@ -67,6 +69,7 @@ export function Sidebar({
             branches={branches}
             selectedTarget={commit?.id ?? null}
             onSelect={onSelectCommit}
+            onEditDescription={onEditDescription}
           />
         )}
         {tab === "worktrees" && (
