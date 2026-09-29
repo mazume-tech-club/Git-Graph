@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "git-graph"
-version = "1.1.0"
+version = "1.2.1"
 dependencies = [
  "git2",
  "serde",
