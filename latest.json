@@ -1,0 +1,11 @@
+{
+  "version": "1.2.0",
+  "notes": "## 追加\n\n- 自動更新に対応しました。新しいバージョンが出ていると起動時に通知し、\n  「今すぐ更新」を押すとダウンロードして入れ替え、再起動します。\n  作業中に勝手に再起動しないよう、適用は押したときだけ行います。\n- 更新ファイルは署名で検証するため、差し替えられたものは適用されません。\n\n## 補足\n\nこの版から自動更新が有効になります。**v1.1.0 以前からは自動更新できない**ため、\nお手数ですが下記のインストーラを一度実行してください。次回以降は通知から更新できます。\n\n更新が確認できない環境（配信元に届かない場合）でも、アプリは通常どおり動作します。\n\n## インストール\n\n`Git Graph_1.2.0_x64-setup.exe` を実行してください。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）",
+  "pub_date": "2026-09-29T08:22:42Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUUZGbjBSVkplc0daQTRWbUpvRnRtZDFla1FsMEtKdkFtWnpFODRMdzd4a1RiWVQvRi93emJLZVg2Q1Fmak5LaWhjdklSNUF5bTNGektzRDArMitqSXdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjcwMTI3CWZpbGU6R2l0IEdyYXBoXzEuMi4wX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjIuMAozTG1TK1o2c1kweVhzbGYvVXArMzNMVE15WUJQVEswMW9xZmxjdm91eng1RUhRY0VtdUZ6TG1QZ0lnNGk1M0h0L05PNDI5OGprQlhRMlZqazA3S2xBdz09Cg==",
+      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.2.0/Git%20Graph_1.2.0_x64-setup.exe"
+    }
+  }
+}
