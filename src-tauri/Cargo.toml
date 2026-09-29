@@ -1,6 +1,6 @@
 [package]
 name = "git-graph"
-version = "1.1.0"
+version = "1.2.0"
 description = "Git のコミットグラフを可視化するデスクトップアプリ"
 authors = ["you"]
 edition = "2021"
@@ -22,6 +22,9 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+# 自動更新。updater が新しい版を入れ、process がアプリを再起動する
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 git2 = { version = "0.21", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

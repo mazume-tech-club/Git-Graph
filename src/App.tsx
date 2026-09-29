@@ -14,6 +14,7 @@ import {
 } from "./api";
 import { CommitList } from "./components/CommitList";
 import { Sidebar, type SidebarTab } from "./components/Sidebar";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { buildGraph } from "./graph/lanes";
 import type { BranchInfo, Commit, DiffSummary, RepoInfo, WorktreeInfo } from "./types";
 import "./App.css";
@@ -268,6 +269,8 @@ function App() {
           </div>
         )}
       </header>
+
+      <UpdateBanner />
 
       {error && <div className="banner error">{error}</div>}
       {notice && <div className="banner">{notice}</div>}

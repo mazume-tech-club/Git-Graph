@@ -879,3 +879,35 @@ body {
   border: 1px solid var(--accent);
   border-radius: 3px;
 }
+
+/* ---- 更新の通知 ---- */
+
+.banner.update {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--fg);
+  background: var(--bg-selected);
+}
+
+.banner.update button {
+  padding: 2px 10px;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.banner.update button:hover {
+  background: var(--bg-hover);
+}
+
+.update-notes {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
