@@ -1,11 +1,11 @@
 {
-  "version": "1.2.2",
-  "notes": "## 変更\n\n- アプリのアイコンを Git Graph 独自のものに変更しました。\n  コミットグラフ（幹から枝が分かれて合流する形）を図柄にしています。\n  exe・タスクバー・トレイのアイコンが新しくなります。\n\n## 更新方法\n\nv1.2.1 をお使いの場合は、起動時の通知から「今すぐ更新」を押すと更新できます。\nv1.1.0 以前をお使いの場合は、下記のインストーラを実行してください。\n\nアイコンが古いまま表示される場合は、Windows のアイコンキャッシュが原因です。\nサインアウトし直すか、しばらくすると反映されます。\n\n## インストール\n\n`Git Graph_1.2.2_x64-setup.exe` を実行してください。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）",
-  "pub_date": "2026-10-06T03:24:34Z",
+  "version": "1.3.0",
+  "notes": "## 変更\n\n- インストール先を `C:\\Program Files\\Git Graph` に変更しました。\n  これまでは利用者ごとのフォルダ（`%LOCALAPPDATA%\\Git Graph`）に入っていました。\n- インストールと更新のときに、管理者の確認（UAC）が表示されるようになります。\n\n## 旧版をお使いの方へ（必ずお読みください）\n\nv1.2.2 以前は別の場所に入っているため、更新しても旧版は自動では削除されず、\n**Git Graph が 2 つ並んだ状態**になります。次の手順で旧版を削除してください。\n\n1. Git Graph をトレイアイコンのメニューから終了する\n2. 「設定 → アプリ → インストールされているアプリ」で「Git Graph」を探す\n3. 2 つある場合は、バージョンが古い方（1.2.x）をアンインストールする\n4. 下記のインストーラ、または更新通知から v1.3.0 を入れる\n\nブランチのメモはリポジトリ側（`.git/config`）に保存されているため、移行しても消えません。\n\n## インストール\n\n`Git Graph_1.3.0_x64-setup.exe` を実行してください（管理者権限が必要です）。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）\n- 管理者権限",
+  "pub_date": "2026-10-06T04:57:11Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUUFwSjRkZld1YU5YbkJjSWFPNzVweXBFMGJsanhJZHp3cmUxOTNZNFE2aHNxUnJacURXcE0rZ3k2YjJoZDVKWFRjMUNkbHhHNUpUdzRPVFM4S3N6eVF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMjU3MDQ3CWZpbGU6R2l0IEdyYXBoXzEuMi4yX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjIuMgpRdERLMm5RVlhSd3cwM0IxZ1Q0YnUwMk91QmZtNFpTYjcwUnRzeXk0elBtenU2dWhvWFNrQ2RUM3BreHZ1Ly81RytsUkNkMFVpTDl2OHNVMVgxNXlDZz09Cg==",
-      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.2.2/Git%20Graph_1.2.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUU5aOGwwblE3NVlkQmRERHVYZk5ib1Z3WEF0d1NKYkhxZENiT1phUStORkphWElyVCtMbHJzYWUwQUcxNW5RSjlHUHM4VFhRWmxLRnhmdzJCM05xMVFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMjYyNDc3CWZpbGU6R2l0IEdyYXBoXzEuMy4wX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjMuMApBNHZNQ0dTc2JObFF0cE56djE4ZTIzZkpFczEzODZnTUlxYmJzeXltaWxVekJmcGl4dCtIY0NoeDAyaFJsdnNkTUxBUjVOWGRRcUo5b1VTamVUU2pEUT09Cg==",
+      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.3.0/Git%20Graph_1.3.0_x64-setup.exe"
     }
   }
 }
