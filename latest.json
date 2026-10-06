@@ -1,11 +1,11 @@
 {
-  "version": "1.2.1",
-  "notes": "## 追加\n\n- 自動更新に対応しました。新しいバージョンが出ていると起動時に通知し、\n  「今すぐ更新」を押すとダウンロードして入れ替え、再起動します。\n  作業中に勝手に再起動しないよう、適用は押したときだけ行います。\n- 更新ファイルは署名で検証するため、差し替えられたものは適用されません。\n\n## 補足\n\nこの版から自動更新が有効になります。**v1.1.0 以前からは自動更新できない**ため、\nお手数ですが下記のインストーラを一度実行してください。次回以降は通知から更新できます。\n\n更新の確認に失敗しても、アプリは通常どおり動作します。\n\nv1.2.0 は起動できない不具合があったため取り下げました。こちらをご利用ください。\n\n## インストール\n\n`Git Graph_1.2.1_x64-setup.exe` を実行してください。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）",
-  "pub_date": "2026-09-29T08:36:01Z",
+  "version": "1.2.2",
+  "notes": "## 変更\n\n- アプリのアイコンを Git Graph 独自のものに変更しました。\n  コミットグラフ（幹から枝が分かれて合流する形）を図柄にしています。\n  exe・タスクバー・トレイのアイコンが新しくなります。\n\n## 更新方法\n\nv1.2.1 をお使いの場合は、起動時の通知から「今すぐ更新」を押すと更新できます。\nv1.1.0 以前をお使いの場合は、下記のインストーラを実行してください。\n\nアイコンが古いまま表示される場合は、Windows のアイコンキャッシュが原因です。\nサインアウトし直すか、しばらくすると反映されます。\n\n## インストール\n\n`Git Graph_1.2.2_x64-setup.exe` を実行してください。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）",
+  "pub_date": "2026-10-06T03:24:34Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUUlqWFlrdENxRWFFck03RXBENTJaUzBORTg4YWd3eDlTNURLSm5HeHpWMVlzQWJZYkpxK3VNYUVsWmZrbldHQUxNbzBlcUFsNW5LcmVJL1ZEbnd0cFFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwNjcwNzE5CWZpbGU6R2l0IEdyYXBoXzEuMi4xX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjIuMQpyb0tLRm02TE1OOVFKUE9kN25taEs3Y0NqdW9JQnR1cU1YREpTbDVwSVN1bkowb3RsSWlBSVEwMDBRUkF0TFhhTEpUWENIMGNRZGZueTVwZEVYamlDQT09Cg==",
-      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.2.1/Git%20Graph_1.2.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUUFwSjRkZld1YU5YbkJjSWFPNzVweXBFMGJsanhJZHp3cmUxOTNZNFE2aHNxUnJacURXcE0rZ3k2YjJoZDVKWFRjMUNkbHhHNUpUdzRPVFM4S3N6eVF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMjU3MDQ3CWZpbGU6R2l0IEdyYXBoXzEuMi4yX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjIuMgpRdERLMm5RVlhSd3cwM0IxZ1Q0YnUwMk91QmZtNFpTYjcwUnRzeXk0elBtenU2dWhvWFNrQ2RUM3BreHZ1Ly81RytsUkNkMFVpTDl2OHNVMVgxNXlDZz09Cg==",
+      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.2.2/Git%20Graph_1.2.2_x64-setup.exe"
     }
   }
 }
