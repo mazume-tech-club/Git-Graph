@@ -153,6 +153,23 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 その場合は `tray_by_id("main")` が `None` になるので × で通常どおり終了する。
 閉じられなくなるのを避けるため。
 
+### インストール先
+
+NSIS の `installMode` は `perMachine`（v1.3.0 から）。`C:\Program Files\Git Graph` に入り、
+インストールと自動更新のたびに UAC が出る。利用者は管理者権限を持っている前提。
+
+v1.2.x 以前は既定の `currentUser`（`%LOCALAPPDATA%\Git Graph`）に入っていた。
+モードが違うとインストーラは旧版を消さず、2 つ並ぶ。移行は利用者に旧版を手で
+アンインストールしてもらう方針で、リリース本文で案内している。
+`installMode` を変えるとまた同じ問題が起きるので、安易に戻さないこと。
+
+### アイコン
+
+元データは `src-tauri/icons/source.svg`（コミットグラフの図柄、レーン色）。
+直すときは SVG を編集して `npx tauri icon src-tauri/icons/source.svg` で一式を作り直す。
+`android/`・`ios/`・`64x64.png` も生成されるが使わないので消す。
+ファビコン `public/favicon.svg` は同じ SVG のコピーなので合わせて更新する。
+
 ### 自動更新（アプリ本体）
 
 `tauri-plugin-updater` を使い、Gitea のリリースから新しい版を取得する。
