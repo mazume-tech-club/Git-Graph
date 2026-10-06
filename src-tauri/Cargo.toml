@@ -1,6 +1,6 @@
 [package]
 name = "git-graph"
-version = "1.2.1"
+version = "1.2.2"
 description = "Git のコミットグラフを可視化するデスクトップアプリ"
 authors = ["you"]
 edition = "2021"
