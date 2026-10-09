@@ -83,9 +83,12 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | `set_branch_description` | `path`, `branch`, `description?` | `()` |
 | `repo_fingerprint` | `path` | `RepoFingerprint` |
 | `worktree_change_count` | `path` | `usize` |
+| `load_settings` | なし | `Settings` |
+| `save_settings` | `settings` | `()` |
 | `startup_repository` | なし | `String?` |
 
-型は `src-tauri/src/git.rs` と `src/types.ts` が 1 対 1 で対応する（serde の camelCase）。
+型は `src-tauri/src/git.rs`・`src-tauri/src/settings.rs` と `src/types.ts` が 1 対 1 で
+対応する（serde の camelCase）。
 
 ## 仕様の詳細
 
@@ -161,6 +164,35 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 - キーは `branch.<name>.description` に固定。任意の設定は書けない
 - ローカルブランチの存在を確認してから書く（リモート追跡ブランチは弾く）
 - 空文字・空白だけの値は「未設定」として削除する
+
+### 設定ファイル
+
+`src-tauri/src/settings.rs`。保存先は Tauri の `app_config_dir()`
+（Windows では `%APPDATA%\jp.asuzacgroup.gitgraph\settings.json`）。
+
+- 「消えると困る」設定（テーマ、今後の登録リポジトリ・マージ基準）はここに入れる。
+  サイドバー幅や前回のリポジトリのような軽い UI 状態は localStorage のまま
+- 項目は必ず `#[serde(default)]` で足す。古い版のファイルにも、新しい版のファイルにも
+  耐えるため。知らない項目は読み飛ばす
+- 壊れたファイルはエラーにする。既定値で黙って上書きしない（利用者の編集を消さない）
+- 一時ファイルに書いてから rename で置き換える
+- ブラウザプレビューでは OS の一時フォルダの `git-graph-dev-settings.json` に書く
+
+### テーマ
+
+配色は `src/App.css` 先頭の CSS 変数で、`<html data-theme="light|dark|custom">` で
+切り替える。`src/theme.ts` の `applyTheme` が設定から属性を決める。
+
+- 「OS に従う」は JS が `prefers-color-scheme` を見て light / dark に解決し、変更も監視する。
+  CSS の `@media` は属性が無い（設定を読む前の）ときだけの保険
+- カスタムは基調色 1 色から `derivePalette` で派生させ、インラインの CSS 変数で上書きする。
+  文字色は基調色とコントラストが高い方（白系 / 黒系）、アクセント色は固定の青で、
+  背景とのコントラストが 3 を切るときだけ文字色側へ寄せる
+- 解決した結果を localStorage（`git-graph:theme-resolved`）に控え、`index.html` の
+  先頭スクリプトが React より先に当てる。設定ファイルを待つ間のちらつき防止。
+  キー名を変えるときは両方直す
+- レーン色やバッジ色（緑・赤・橙・紫）はテーマで変えない。意味を持つ色なので
+  全テーマで同じにしてある
 
 ### タスクトレイ
 

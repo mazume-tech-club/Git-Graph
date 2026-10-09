@@ -1,10 +1,12 @@
 mod git;
+mod settings;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, WindowEvent};
 
 use git::{BranchInfo, CommitInfo, DiffSummary, FileDiff, RepoFingerprint, RepoInfo, WorktreeInfo};
+use settings::Settings;
 
 /// 指定パス（またはその上位）の Git リポジトリを開き、概要を返す。
 #[tauri::command]
@@ -76,6 +78,25 @@ fn worktree_change_count(path: String) -> Result<usize, String> {
     git::worktree_change_count(&path)
 }
 
+/// 設定ファイルの置き場所。アプリの設定ディレクトリ（Windows では `%APPDATA%\<identifier>`）
+fn settings_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map_err(|e| format!("設定フォルダを特定できません: {e}"))
+}
+
+/// 設定を読む。ファイルが無ければ既定値。
+#[tauri::command]
+fn load_settings(app: tauri::AppHandle) -> Result<Settings, String> {
+    settings::load(&settings_dir(&app)?)
+}
+
+/// 設定を丸ごと書く。
+#[tauri::command]
+fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), String> {
+    settings::save(&settings_dir(&app)?, &settings)
+}
+
 /// 起動時引数で渡されたリポジトリのパス（`git-graph <path>`）。
 /// 指定が無い、またはディレクトリでない場合は None。
 #[tauri::command]
@@ -113,6 +134,8 @@ pub fn run() {
             repo_fingerprint,
             worktree_change_count,
             set_branch_description,
+            load_settings,
+            save_settings,
             startup_repository
         ])
         .setup(|app| {

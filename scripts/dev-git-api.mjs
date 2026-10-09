@@ -6,6 +6,9 @@
  * 仕様の正は Rust 側にあるので、挙動が食い違ったら Rust 側に合わせること。
  */
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const UNIT = "\x1f"; // フィールド区切り
 const RECORD = "\x1e"; // レコード区切り
@@ -496,6 +499,24 @@ export function repoFingerprint(path) {
   };
 }
 
+/** ブラウザプレビュー用の設定ファイル。Tauri の設定ディレクトリの代わりに一時フォルダへ置く */
+const SETTINGS_FILE = join(tmpdir(), "git-graph-dev-settings.json");
+
+const DEFAULT_SETTINGS = { theme: { mode: "system", baseColor: "#1b1d23" } };
+
+export function loadSettings() {
+  if (!existsSync(SETTINGS_FILE)) return DEFAULT_SETTINGS;
+  const parsed = JSON.parse(readFileSync(SETTINGS_FILE, "utf8"));
+  // Rust 側の serde(default) と同じく、無い項目は既定値で埋める
+  return { ...DEFAULT_SETTINGS, ...parsed, theme: { ...DEFAULT_SETTINGS.theme, ...parsed.theme } };
+}
+
+export function saveSettings(json) {
+  const settings = JSON.parse(json);
+  writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  return { ok: true };
+}
+
 /** 作業ツリーで変更されているファイルの数（未追跡を含む、未追跡ディレクトリは 1 件） */
 export function worktreeChangeCount(path) {
   const info = repoInfo(path);
@@ -583,6 +604,10 @@ export function gitApiMiddleware(req, res, next) {
         return send(200, repoFingerprint(url.searchParams.get("path") ?? "."));
       case "/__git/worktree_change_count":
         return send(200, worktreeChangeCount(url.searchParams.get("path") ?? "."));
+      case "/__git/load_settings":
+        return send(200, loadSettings());
+      case "/__git/save_settings":
+        return send(200, saveSettings(url.searchParams.get("json") ?? "{}"));
       case "/__git/list_branches":
         return send(200, listBranches(url.searchParams.get("path") ?? "."));
       case "/__git/list_worktrees":
