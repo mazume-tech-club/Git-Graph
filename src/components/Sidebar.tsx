@@ -1,8 +1,9 @@
+import { BranchDetail } from "./BranchDetail";
 import { BranchList } from "./BranchList";
 import { DiffPane } from "./DiffPane";
 import { CommitDetail } from "./CommitDetail";
 import { WorktreeList } from "./WorktreeList";
-import type { BranchInfo, Commit, WorktreeInfo } from "../types";
+import type { BranchInfo, Commit, MergeBaseInfo, WorktreeInfo } from "../types";
 
 export type SidebarTab = "branches" | "worktrees" | "detail";
 
@@ -11,13 +12,20 @@ type Props = {
   onChangeTab: (tab: SidebarTab) => void;
   branches: BranchInfo[];
   worktrees: WorktreeInfo[];
+  /** ワークツリーのパス → 未コミット変更の件数 */
+  dirty: Map<string, number>;
+  mergeBase: MergeBaseInfo | null;
   commit: Commit | null;
+  /** 一覧で選んだブランチ。選んでいる間は詳細にブランチの変更内容を出す */
+  selectedBranch: BranchInfo | null;
   repoPath: string;
   compareBase: string | null;
   /** コミットではなく作業ツリーの変更を選んでいるか */
   worktreeSelected: boolean;
   onSelectCommit: (commitId: string) => void;
   onSelectParent: (commitId: string) => void;
+  onSelectBranch: (branch: BranchInfo) => void;
+  onChangeMergeBase: (name: string | null) => void;
   onSetCompareBase: (commitId: string | null) => void;
   onEditDescription: (branch: string, description: string | null) => void;
 };
@@ -33,12 +41,17 @@ export function Sidebar({
   onChangeTab,
   branches,
   worktrees,
+  dirty,
+  mergeBase,
   commit,
+  selectedBranch,
   repoPath,
   compareBase,
   worktreeSelected,
   onSelectCommit,
   onSelectParent,
+  onSelectBranch,
+  onChangeMergeBase,
   onSetCompareBase,
   onEditDescription,
 }: Props) {
@@ -67,13 +80,16 @@ export function Sidebar({
         {tab === "branches" && (
           <BranchList
             branches={branches}
-            selectedTarget={commit?.id ?? null}
-            onSelect={onSelectCommit}
+            dirty={dirty}
+            mergeBase={mergeBase}
+            selectedName={selectedBranch?.name ?? null}
+            onSelect={onSelectBranch}
+            onChangeMergeBase={onChangeMergeBase}
             onEditDescription={onEditDescription}
           />
         )}
         {tab === "worktrees" && (
-          <WorktreeList worktrees={worktrees} onSelect={onSelectCommit} />
+          <WorktreeList worktrees={worktrees} dirty={dirty} onSelect={onSelectCommit} />
         )}
         {tab === "detail" && worktreeSelected && (
           <div className="detail">
@@ -81,7 +97,15 @@ export function Sidebar({
             <DiffPane repoPath={repoPath} from={null} to={null} />
           </div>
         )}
-        {tab === "detail" && !worktreeSelected && (
+        {tab === "detail" && !worktreeSelected && selectedBranch && (
+          <BranchDetail
+            branch={selectedBranch}
+            mergeBase={mergeBase}
+            repoPath={repoPath}
+            onSelectCommit={onSelectCommit}
+          />
+        )}
+        {tab === "detail" && !worktreeSelected && !selectedBranch && (
           <CommitDetail
             commit={commit}
             repoPath={repoPath}

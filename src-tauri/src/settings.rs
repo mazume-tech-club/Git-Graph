@@ -41,6 +41,16 @@ impl Default for ThemeSettings {
     }
 }
 
+/// リポジトリごとの設定
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RepositorySettings {
+    /// リポジトリの作業ディレクトリ（`RepoInfo.path` と同じ正規化済みのパス）
+    pub path: String,
+    /// マージ基準のローカルブランチ名。None なら自動検出
+    pub merge_base: Option<String>,
+}
+
 /// 設定全体。項目を増やすときは `#[serde(default)]` を保ったまま足す。
 /// 古い版が書いたファイルに項目が無くても既定値で読めるようにするため。
 /// 知らない項目は読み飛ばす（新しい版が書いたファイルを古い版で開いても壊れない）。
@@ -48,6 +58,7 @@ impl Default for ThemeSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub theme: ThemeSettings,
+    pub repositories: Vec<RepositorySettings>,
 }
 
 /// 設定を読む。ファイルが無ければ既定値。壊れていればエラー
@@ -103,6 +114,10 @@ mod tests {
                 mode: ThemeMode::Custom,
                 base_color: "#102030".to_string(),
             },
+            repositories: vec![RepositorySettings {
+                path: "C:/work/app".to_string(),
+                merge_base: Some("develop".to_string()),
+            }],
         };
         save(dir.path(), &settings).unwrap();
         assert_eq!(load(dir.path()).unwrap(), settings);
@@ -121,6 +136,7 @@ mod tests {
         let settings = load(dir.path()).unwrap();
         assert_eq!(settings.theme.mode, ThemeMode::Dark);
         assert_eq!(settings.theme.base_color, "#1b1d23");
+        assert!(settings.repositories.is_empty());
     }
 
     #[test]

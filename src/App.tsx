@@ -4,8 +4,10 @@ import {
   isBrowserPreview,
   listBranches,
   listCommits,
+  listWorktreeChanges,
   listWorktrees,
   loadSettings,
+  mergeBaseInfo,
   openRepository,
   pickRepository,
   repoFingerprint,
@@ -14,6 +16,7 @@ import {
   startupRepository,
   worktreeChangeCount,
 } from "./api";
+import { changesByPath, normalizePath } from "./branchState";
 import { CommitList, type CommitListHandle } from "./components/CommitList";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar, type SidebarTab } from "./components/Sidebar";
@@ -23,10 +26,12 @@ import { applyTheme } from "./theme";
 import type {
   BranchInfo,
   Commit,
+  MergeBaseInfo,
   RepoFingerprint,
   RepoInfo,
   Settings,
   ThemeSettings,
+  WorktreeChanges,
   WorktreeInfo,
 } from "./types";
 import "./App.css";
@@ -40,12 +45,21 @@ const SIDEBAR_MAX = 720;
 const REFRESH_INTERVAL_MS = 5_000;
 /** 未コミットの変更を数え直す間隔。ref より重いので間隔を広くとる */
 const WORKTREE_INTERVAL_MS = 15_000;
+/** 全ワークツリーの未コミット変更を数え直す間隔。主状態「作業中」の鮮度 */
+const DIRTY_INTERVAL_MS = 30_000;
 /** 設定の保存をまとめる待ち時間。色の選択中は値が連続して変わるため */
 const SETTINGS_SAVE_DELAY_MS = 400;
 
 const DEFAULT_SETTINGS: Settings = {
   theme: { mode: "system", baseColor: "#1b1d23" },
+  repositories: [],
 };
+
+/** 設定に記録されたマージ基準。無ければ null（自動検出） */
+function preferredMergeBase(settings: Settings, repoPath: string): string | null {
+  const key = normalizePath(repoPath);
+  return settings.repositories.find((r) => normalizePath(r.path) === key)?.mergeBase ?? null;
+}
 
 function readStoredWidth(): number {
   const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
@@ -58,6 +72,11 @@ function App() {
   const [commits, setCommits] = useState<Commit[]>([]);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
+  const [mergeBase, setMergeBase] = useState<MergeBaseInfo | null>(null);
+  /** 全ワークツリーの未コミット変更の件数。主状態「作業中」の判定に使う */
+  const [dirtyList, setDirtyList] = useState<WorktreeChanges[]>([]);
+  /** 一覧で選んだブランチ名。グラフの行を選ぶと解除される */
+  const [selectedBranchName, setSelectedBranchName] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [worktreeSelected, setWorktreeSelected] = useState(false);
   const [compareBase, setCompareBase] = useState<string | null>(null);
@@ -75,22 +94,19 @@ function App() {
   const contentRef = useRef<HTMLElement>(null);
   const listRef = useRef<CommitListHandle>(null);
   const saveTimer = useRef<number | null>(null);
-
-  // 設定ファイルを読んでテーマを当てる。読めなくても既定値で動かす
-  useEffect(() => {
-    loadSettings()
-      .then(setSettings)
-      .catch((e) => setNotice(`設定を読めなかったので既定値を使います: ${String(e)}`));
-  }, []);
+  // 読み込み処理から最新の設定（マージ基準）を参照するための控え
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   useEffect(() => {
     applyTheme(settings.theme);
   }, [settings.theme]);
 
-  /** テーマを変える。画面には即反映し、保存は少し待ってまとめる */
-  const changeTheme = useCallback((theme: ThemeSettings) => {
+  /** 設定を更新する。画面には即反映し、保存は少し待ってまとめる */
+  const updateSettings = useCallback((update: (prev: Settings) => Settings) => {
     setSettings((prev) => {
-      const next = { ...prev, theme };
+      const next = update(prev);
+      settingsRef.current = next;
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => {
         saveTimer.current = null;
@@ -99,6 +115,11 @@ function App() {
       return next;
     });
   }, []);
+
+  const changeTheme = useCallback(
+    (theme: ThemeSettings) => updateSettings((prev) => ({ ...prev, theme })),
+    [updateSettings],
+  );
 
   /**
    * リポジトリを読み直す。
@@ -111,26 +132,36 @@ function App() {
     setError(null);
     try {
       const info = await openRepository(path);
-      const [list, branchList, worktreeList, changes] = await Promise.all([
+      const preferred = preferredMergeBase(settingsRef.current, info.path);
+      const [list, base, branchList, worktreeList, changes, dirty] = await Promise.all([
         listCommits(info.path, COMMIT_LIMIT),
-        listBranches(info.path),
+        mergeBaseInfo(info.path, preferred),
+        listBranches(info.path, preferred),
         listWorktrees(info.path),
         // 未コミットの変更。件数だけ先に出して、中身は開いたときに取る
         worktreeChangeCount(info.path).catch(() => 0),
+        listWorktreeChanges(info.path).catch(() => []),
       ]);
       setRepo(info);
       setCommits(list);
+      setMergeBase(base);
       setBranches(branchList);
       setWorktrees(worktreeList);
       setWorktreeChanges(changes);
+      setDirtyList(dirty);
       setCheckedAt(Date.now());
       if (keepSelection) {
         // 選択中のコミットが消えていたら先頭に戻す
         setSelectedId((prev) =>
           prev && list.some((c) => c.id === prev) ? prev : (list[0]?.id ?? null),
         );
+        // 選んでいたブランチが消えていたら解除する
+        setSelectedBranchName((prev) =>
+          prev && branchList.some((b) => b.name === prev) ? prev : null,
+        );
       } else {
         setSelectedId(list.length > 0 ? list[0].id : null);
+        setSelectedBranchName(null);
         setWorktreeSelected(false);
         setCompareBase(null);
       }
@@ -145,8 +176,11 @@ function App() {
       setCommits([]);
       setBranches([]);
       setWorktrees([]);
+      setMergeBase(null);
+      setDirtyList([]);
       setWorktreeChanges(0);
       setSelectedId(null);
+      setSelectedBranchName(null);
     } finally {
       setLoading(false);
     }
@@ -154,9 +188,17 @@ function App() {
     [],
   );
 
-  // 起動時引数のリポジトリを開く。無ければ前回開いたものを復元する
+  // 設定を読んでから、起動時引数のリポジトリを開く。無ければ前回開いたものを復元する。
+  // 設定が先なのは、リポジトリごとのマージ基準を最初の読み込みから効かせるため
   useEffect(() => {
     void (async () => {
+      try {
+        const loaded = await loadSettings();
+        settingsRef.current = loaded;
+        setSettings(loaded);
+      } catch (e) {
+        setNotice(`設定を読めなかったので既定値を使います: ${String(e)}`);
+      }
       const fromArgs = await startupRepository().catch(() => null);
       if (fromArgs) {
         await load(fromArgs);
@@ -196,24 +238,59 @@ function App() {
   /** グラフの行を選ぶ。行コンポーネントの memo を効かせるため参照を固定する */
   const selectCommit = useCallback((id: string) => {
     setWorktreeSelected(false);
+    setSelectedBranchName(null);
     setSelectedId(id);
     setTab("detail");
   }, []);
 
   const selectWorktree = useCallback(() => {
     setWorktreeSelected(true);
+    setSelectedBranchName(null);
     setTab("detail");
   }, []);
 
+  /** 一覧でブランチを選ぶ。グラフは先端へ飛ばし、詳細にはブランチの変更内容を出す */
+  const selectBranch = useCallback(
+    (branch: BranchInfo) => {
+      revealCommit(branch.target);
+      setSelectedBranchName(branch.name);
+      setTab("detail");
+    },
+    [revealCommit],
+  );
+
   /** ブランチとワークツリーの一覧だけを取り直す（コミットは変わっていないとき用） */
   const reloadLists = useCallback(async (path: string) => {
-    const [branchList, worktreeList] = await Promise.all([
-      listBranches(path),
+    const preferred = preferredMergeBase(settingsRef.current, path);
+    const [base, branchList, worktreeList, dirty] = await Promise.all([
+      mergeBaseInfo(path, preferred),
+      listBranches(path, preferred),
       listWorktrees(path),
+      listWorktreeChanges(path).catch(() => []),
     ]);
+    setMergeBase(base);
     setBranches(branchList);
     setWorktrees(worktreeList);
+    setDirtyList(dirty);
   }, []);
+
+  /** マージ基準をリポジトリごとに記憶し、一覧を判定し直す。null で自動検出に戻す */
+  const changeMergeBase = useCallback(
+    (name: string | null) => {
+      if (!repo) return;
+      const key = normalizePath(repo.path);
+      updateSettings((prev) => {
+        const others = prev.repositories.filter((r) => normalizePath(r.path) !== key);
+        const current = prev.repositories.find((r) => normalizePath(r.path) === key);
+        return {
+          ...prev,
+          repositories: [...others, { ...current, path: repo.path, mergeBase: name }],
+        };
+      });
+      reloadLists(repo.path).catch((e) => setError(String(e)));
+    },
+    [repo, updateSettings, reloadLists],
+  );
 
   /**
    * ブランチのメモを保存して一覧を取り直す。
@@ -306,6 +383,29 @@ function App() {
     };
   }, [repoPath]);
 
+  // 全ワークツリーの未コミット変更を取り直す。主状態「作業中」の鮮度を保つため。
+  // ref の確認より粗い間隔にして負荷を抑える
+  useEffect(() => {
+    if (!repoPath) return;
+    let stopped = false;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void listWorktreeChanges(repoPath)
+        .then((d) => !stopped && setDirtyList(d))
+        .catch(() => undefined);
+    }, DIRTY_INTERVAL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [repoPath]);
+
+  const dirty = useMemo(() => changesByPath(dirtyList), [dirtyList]);
+  const selectedBranch = useMemo(
+    () => branches.find((b) => b.name === selectedBranchName) ?? null,
+    [branches, selectedBranchName],
+  );
+
   return (
     <div className="app">
       <header className="toolbar">
@@ -392,12 +492,17 @@ function App() {
               onChangeTab={setTab}
               branches={branches}
               worktrees={worktrees}
+              dirty={dirty}
+              mergeBase={mergeBase}
               commit={selected}
+              selectedBranch={selectedBranch}
               repoPath={repo.path}
               compareBase={compareBase}
               worktreeSelected={worktreeSelected}
               onSelectCommit={revealCommit}
               onSelectParent={revealCommit}
+              onSelectBranch={selectBranch}
+              onChangeMergeBase={changeMergeBase}
               onSetCompareBase={setCompareBase}
               onEditDescription={(b, d) => void editDescription(b, d)}
             />

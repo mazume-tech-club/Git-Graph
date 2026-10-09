@@ -494,6 +494,98 @@ dialog.settings::backdrop {
   border-radius: 8px;
 }
 
+.badge-unpushed {
+  padding: 0 5px;
+  font-size: 11px;
+  color: #a78bfa;
+  border: 1px solid #a78bfa;
+  border-radius: 8px;
+}
+
+.badge-base {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: normal;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.ahead-behind {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* マージ基準の選択。絞り込みの行に置く */
+.merge-base-picker select {
+  max-width: 160px;
+  margin-left: 4px;
+  padding: 2px 4px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.panel-warning {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: #f6a609;
+}
+
+/* ---- 主状態のグループ ---- */
+
+.branch-group-header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-align: left;
+  cursor: pointer;
+  background: var(--bg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.branch-group-header:hover {
+  color: var(--fg);
+}
+
+.branch-group-arrow {
+  width: 10px;
+}
+
+.branch-group-label {
+  font-weight: 600;
+}
+
+.branch-group.working .branch-group-label {
+  color: #31c48d;
+}
+
+.branch-group.unmerged .branch-group-label {
+  color: #f6a609;
+}
+
+.branch-group-count {
+  padding: 0 5px;
+  font-size: 11px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+}
+
+.branch-group-hint {
+  margin-left: auto;
+  font-size: 11px;
+}
+
 .age.stale {
   font-weight: 600;
   color: #e05561;
@@ -536,6 +628,7 @@ dialog.settings::backdrop {
 }
 
 .badge-main,
+.badge-working,
 .badge-locked,
 .badge-prunable {
   flex: 0 0 auto;
@@ -547,6 +640,11 @@ dialog.settings::backdrop {
 .badge-main {
   color: #4c8dff;
   border: 1px solid #4c8dff;
+}
+
+.badge-working {
+  color: #31c48d;
+  border: 1px solid #31c48d;
 }
 
 .badge-locked {
@@ -676,6 +774,17 @@ dialog.settings::backdrop {
   margin: 0 0 10px;
   font-size: 14px;
   line-height: 1.4;
+}
+
+.detail-section {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.detail-meta .badge-unpushed {
+  margin-left: 6px;
 }
 
 .detail-refs {
