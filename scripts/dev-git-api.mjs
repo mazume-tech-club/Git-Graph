@@ -481,8 +481,9 @@ export function repoFingerprint(path) {
   const entries = raw === "" ? [] : raw.split("\n").sort();
   const worktrees = Math.max(0, listWorktrees(info.path).length - 1);
 
+  // ワークツリー数はダイジェストに混ぜない（Rust 側と同じ。フロントが別々に比べる）
   let hash = 0;
-  for (const entry of [...entries, String(worktrees)]) {
+  for (const entry of entries) {
     for (let i = 0; i < entry.length; i += 1) {
       hash = (Math.imul(hash, 31) + entry.charCodeAt(i)) | 0;
     }
@@ -493,6 +494,14 @@ export function repoFingerprint(path) {
     head: info.headCommit,
     worktrees,
   };
+}
+
+/** 作業ツリーで変更されているファイルの数（未追跡を含む、未追跡ディレクトリは 1 件） */
+export function worktreeChangeCount(path) {
+  const info = repoInfo(path);
+  if (info.isEmpty) return 0;
+  const raw = git(info.path, ["status", "--porcelain", "--untracked-files=normal"]).trim();
+  return raw === "" ? 0 : raw.split("\n").filter(Boolean).length;
 }
 
 /**
@@ -572,6 +581,8 @@ export function gitApiMiddleware(req, res, next) {
         );
       case "/__git/repo_fingerprint":
         return send(200, repoFingerprint(url.searchParams.get("path") ?? "."));
+      case "/__git/worktree_change_count":
+        return send(200, worktreeChangeCount(url.searchParams.get("path") ?? "."));
       case "/__git/list_branches":
         return send(200, listBranches(url.searchParams.get("path") ?? "."));
       case "/__git/list_worktrees":

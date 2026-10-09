@@ -82,6 +82,7 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | `file_diff` | `path`, `from?`, `to?`, `file` | `FileDiff` |
 | `set_branch_description` | `path`, `branch`, `description?` | `()` |
 | `repo_fingerprint` | `path` | `RepoFingerprint` |
+| `worktree_change_count` | `path` | `usize` |
 | `startup_repository` | なし | `String?` |
 
 型は `src-tauri/src/git.rs` と `src/types.ts` が 1 対 1 で対応する（serde の camelCase）。
@@ -131,6 +132,23 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 
 **指紋に作業ツリーの状態は含めない。** `statuses()` 相当の走査は大きいリポジトリで重く、
 数秒ごとに回すには向かないため。未コミットの変更の件数だけ 15 秒間隔で別に取り直す。
+件数は `worktree_change_count`（status の件数だけ。増減行数は計算しない）で取る。
+`diff_summary` を定期的に呼ぶと変更ファイルごとに差分を計算してしまい重い。
+
+指紋の `refs` ダイジェストにワークツリー数は混ぜない。ワークツリーの増減だけなら
+コミットは変わらないので、フロントはブランチとワークツリーの一覧だけ取り直す。
+
+### パフォーマンス上の決まり
+
+- **ahead/behind はプロセス内でキャッシュする**（`git.rs` の `ahead_behind`）。
+  キーは (ブランチ先端, 基準) の Oid ペア。ブランチが多いリポジトリでは
+  1 本ごとの履歴走査が一覧取得で一番重く、自動更新のたびに同じ計算をしていた
+- **コミット一覧は仮想スクロール**（`CommitList.tsx`）。行の高さが `ROW_HEIGHT` 固定で
+  あることに依存している。行の高さを可変にするなら仮想化も作り直す。
+  特定の行へ飛ぶときは DOM を探さず `CommitListHandle.scrollToCommit` を使う
+  （描いていない行は DOM に無い）
+- ブランチのメモは `config_snapshot` で 1 回だけ設定を開いて読む。ブランチごとに
+  `repo.config()` を開き直さない
 
 ブランチのメモを変更しても ref は変わらないので指紋では検知できない。
 保存後にフロント側で明示的に一覧を取り直している。

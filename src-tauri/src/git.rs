@@ -1,10 +1,11 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::sync::{Mutex, OnceLock};
 
 use git2::{
-    BranchType, ConfigLevel, Delta, Diff, DiffFindOptions, DiffLineType, DiffOptions, ErrorCode,
-    Oid, Patch, Repository, Sort, Tree, WorktreeLockStatus,
+    BranchType, Config, ConfigLevel, Delta, Diff, DiffFindOptions, DiffLineType, DiffOptions,
+    ErrorCode, Oid, Patch, Repository, Sort, StatusOptions, Tree, WorktreeLockStatus,
 };
 use serde::Serialize;
 
@@ -308,11 +309,16 @@ fn worktree_by_branch(repo: &Repository) -> HashMap<String, String> {
     map
 }
 
+/// ブランチのメモを読むための設定。一覧の処理中に何度も開き直さないよう
+/// 1 回だけ開き、スナップショットにして使う。
+fn config_snapshot(repo: &Repository) -> Option<Config> {
+    repo.config().ok()?.snapshot().ok()
+}
+
 /// `git branch --edit-description` で設定された説明を読む。
 /// 未設定なら None。空文字も None として扱う。
-fn branch_description(repo: &Repository, branch: &str) -> Option<String> {
-    let config = repo.config().ok()?;
-    let text = config
+fn branch_description(config: Option<&Config>, branch: &str) -> Option<String> {
+    let text = config?
         .get_string(&format!("branch.{branch}.description"))
         .ok()?;
     let text = text.trim().to_string();
@@ -346,6 +352,44 @@ fn main_workdir(repo: &Repository) -> Option<String> {
     )
 }
 
+/// ahead/behind の計算結果のキャッシュ。
+///
+/// 2 つのコミット間の ahead/behind は履歴だけで決まり、コミット ID は内容から
+/// 定まるので、(ブランチ先端, 基準) のペアが同じなら答えも同じ。ブランチが
+/// 多いリポジトリでは 1 本ごとに履歴を辿るのが一覧取得で一番重く、自動更新の
+/// たびに同じ計算を繰り返していたのでここで覚えておく。
+type AheadBehindCache = HashMap<(Oid, Oid), (usize, usize)>;
+static AHEAD_BEHIND_CACHE: OnceLock<Mutex<AheadBehindCache>> = OnceLock::new();
+
+/// キャッシュがこれを超えたら捨てて作り直す。無限に増えないようにするだけで、
+/// 普通の使い方でここまで溜まることはない
+const AHEAD_BEHIND_CACHE_LIMIT: usize = 8192;
+
+/// `local` が `upstream` に対して何コミット進んでいる / 遅れているか。
+/// 結果はプロセス内でキャッシュする。
+fn ahead_behind(repo: &Repository, local: Oid, upstream: Oid) -> (usize, usize) {
+    if local == upstream {
+        return (0, 0);
+    }
+    let cache = AHEAD_BEHIND_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(map) = cache.lock() {
+        if let Some(found) = map.get(&(local, upstream)) {
+            return *found;
+        }
+    }
+    // 失敗（コミットが見つからない等）は覚えない。別のリポジトリでは解決できるかもしれない
+    let Ok(result) = repo.graph_ahead_behind(local, upstream) else {
+        return (0, 0);
+    };
+    if let Ok(mut map) = cache.lock() {
+        if map.len() >= AHEAD_BEHIND_CACHE_LIMIT {
+            map.clear();
+        }
+        map.insert((local, upstream), result);
+    }
+    result
+}
+
 /// ローカル / リモート追跡ブランチの一覧。HEAD との関係も付けて返す。
 pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
     let repo = open(path)?;
@@ -359,6 +403,7 @@ pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
         .and_then(|h| h.peel_to_commit().ok())
         .map(|c| c.id());
     let worktrees = worktree_by_branch(&repo);
+    let config = config_snapshot(&repo);
 
     let mut branches = Vec::new();
     for branch_type in [BranchType::Local, BranchType::Remote] {
@@ -380,7 +425,7 @@ pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
 
             // HEAD との差分。ahead が 0 なら HEAD に取り込み済み
             let (ahead, behind) = match head_oid {
-                Some(head) => repo.graph_ahead_behind(target, head).unwrap_or((0, 0)),
+                Some(head) => ahead_behind(&repo, target, head),
                 None => (0, 0),
             };
 
@@ -413,7 +458,7 @@ pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
                 last_commit_author: commit.author().name().unwrap_or_default().to_string(),
                 // 説明はローカルブランチにしか設定できない
                 description: if is_local {
-                    branch_description(&repo, &name)
+                    branch_description(config.as_ref(), &name)
                 } else {
                     None
                 },
@@ -458,6 +503,7 @@ fn head_info(repo: &Repository) -> HeadInfo {
 /// ワークツリーの一覧。メインワークツリーを先頭に置く。
 pub fn list_worktrees(path: &str) -> Result<Vec<WorktreeInfo>, String> {
     let repo = open(path)?;
+    let config = config_snapshot(&repo);
     let mut list = Vec::new();
 
     if let Some(dir) = main_workdir(&repo) {
@@ -477,7 +523,7 @@ pub fn list_worktrees(path: &str) -> Result<Vec<WorktreeInfo>, String> {
             description: head
                 .branch
                 .as_deref()
-                .and_then(|b| branch_description(&repo, b)),
+                .and_then(|b| branch_description(config.as_ref(), b)),
             branch: head.branch,
             head: head.id,
             is_main: true,
@@ -518,7 +564,7 @@ pub fn list_worktrees(path: &str) -> Result<Vec<WorktreeInfo>, String> {
             description: head
                 .branch
                 .as_deref()
-                .and_then(|b| branch_description(&repo, b)),
+                .and_then(|b| branch_description(config.as_ref(), b)),
             branch: head.branch,
             head: head.id,
             is_main: false,
@@ -872,8 +918,9 @@ pub fn fingerprint(path: &str) -> Result<RepoFingerprint, String> {
         entry.hash(&mut hasher);
     }
 
+    // ワークツリー数はダイジェストに混ぜず別の項目にする。
+    // フロントが「ワークツリーだけ変わった」と判別して、一覧だけ取り直せるようにするため
     let worktrees = repo.worktrees().map(|w| w.iter().count()).unwrap_or(0);
-    worktrees.hash(&mut hasher);
 
     Ok(RepoFingerprint {
         refs: format!("{:016x}", hasher.finish()),
@@ -884,6 +931,29 @@ pub fn fingerprint(path: &str) -> Result<RepoFingerprint, String> {
             .map(|c| c.id().to_string()),
         worktrees,
     })
+}
+
+/// 作業ツリーで変更されているファイルの数（未追跡を含む）。
+///
+/// 一覧の「未コミット」行に件数を出すためだけに定期的に呼ぶ。`diff_summary` と
+/// 違って差分の中身（増減行数）は計算しないので、変更ファイルが大きくても軽い。
+/// 未追跡ディレクトリは中を辿らず 1 件と数える（`diff_summary` と同じ数え方）。
+pub fn worktree_change_count(path: &str) -> Result<usize, String> {
+    let repo = open(path)?;
+    if repo.is_bare() {
+        return Ok(0);
+    }
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(false)
+        .include_ignored(false)
+        .exclude_submodules(true)
+        // 読み取り専用アプリなので index のキャッシュは書き戻さない
+        .update_index(false);
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .map_err(|e| e.message().to_string())?;
+    Ok(statuses.iter().filter(|s| !s.status().is_empty()).count())
 }
 
 /// ブランチの説明を設定する。空文字や None のときは設定を消す。
@@ -1470,6 +1540,60 @@ mod tests {
         let (dir, _outside) = fixture_with_worktree();
         assert_eq!(fingerprint(&path_of(&dir)).unwrap().worktrees, 1);
         assert_eq!(fingerprint(&path_of(&fixture())).unwrap().worktrees, 0);
+    }
+
+    #[test]
+    fn fingerprint_refs_digest_ignores_worktree_count() {
+        // ワークツリーの増減は worktrees の項目だけに出て、refs のダイジェストは変えない。
+        // フロントが「ワークツリーだけ変わった」と見分けて一覧だけ取り直すため
+        let (dir, _outside) = fixture_with_worktree();
+        let path = path_of(&dir);
+        let before = fingerprint(&path).unwrap();
+
+        let repo = Repository::open(dir.path()).unwrap();
+        let mut prune = git2::WorktreePruneOptions::new();
+        prune.valid(true).working_tree(true);
+        repo.find_worktree("wt-feature")
+            .unwrap()
+            .prune(Some(&mut prune))
+            .unwrap();
+
+        let after = fingerprint(&path).unwrap();
+        assert_eq!(after.worktrees, 0);
+        assert_eq!(after.refs, before.refs);
+    }
+
+    #[test]
+    fn worktree_change_count_matches_diff_summary() {
+        let dir = file_fixture();
+        let path = path_of(&dir);
+        assert_eq!(worktree_change_count(&path).unwrap(), 0);
+
+        // 変更 1 件 + 未追跡ファイル 1 件 + 未追跡ディレクトリ 1 件（中は辿らない）
+        std::fs::write(dir.path().join("c.txt"), "changed\n").unwrap();
+        std::fs::write(dir.path().join("untracked.txt"), "x").unwrap();
+        std::fs::create_dir(dir.path().join("newdir")).unwrap();
+        std::fs::write(dir.path().join("newdir/one.txt"), "1").unwrap();
+        std::fs::write(dir.path().join("newdir/two.txt"), "2").unwrap();
+
+        let count = worktree_change_count(&path).unwrap();
+        assert_eq!(count, 3);
+        assert_eq!(count, diff_summary(&path, None, None).unwrap().files.len());
+    }
+
+    #[test]
+    fn ahead_behind_is_stable_across_cache_hits() {
+        let dir = fixture();
+        let path = path_of(&dir);
+        // 1 回目で計算し、2 回目はキャッシュから返る。どちらも同じ値であること
+        let first = list_branches(&path).unwrap();
+        let second = list_branches(&path).unwrap();
+        for (a, b) in first.iter().zip(second.iter()) {
+            assert_eq!((a.ahead, a.behind), (b.ahead, b.behind), "{}", a.name);
+        }
+        let feature = first.iter().find(|b| b.name == "feature").unwrap();
+        // feature(C) は main(M) に取り込み済み。M, D の 2 つ分だけ遅れている
+        assert_eq!((feature.ahead, feature.behind), (0, 2));
     }
 
     #[test]

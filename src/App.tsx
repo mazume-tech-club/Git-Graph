@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  diffSummary,
   isBrowserPreview,
   listBranches,
   listCommits,
@@ -11,12 +10,13 @@ import {
   repoFingerprint,
   setBranchDescription,
   startupRepository,
+  worktreeChangeCount,
 } from "./api";
-import { CommitList } from "./components/CommitList";
+import { CommitList, type CommitListHandle } from "./components/CommitList";
 import { Sidebar, type SidebarTab } from "./components/Sidebar";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { buildGraph } from "./graph/lanes";
-import type { BranchInfo, Commit, DiffSummary, RepoInfo, WorktreeInfo } from "./types";
+import type { BranchInfo, Commit, RepoFingerprint, RepoInfo, WorktreeInfo } from "./types";
 import "./App.css";
 
 const COMMIT_LIMIT = 500;
@@ -43,7 +43,8 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [worktreeSelected, setWorktreeSelected] = useState(false);
   const [compareBase, setCompareBase] = useState<string | null>(null);
-  const [worktreeChanges, setWorktreeChanges] = useState<DiffSummary | null>(null);
+  /** 作業ツリーで変更されているファイル数。中身は選んだときに別途取る */
+  const [worktreeChanges, setWorktreeChanges] = useState(0);
   const [tab, setTab] = useState<SidebarTab>("branches");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +53,7 @@ function App() {
   /** 最後にリポジトリの変化を確認できた時刻。ポーリングが生きていることの目印 */
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const contentRef = useRef<HTMLElement>(null);
+  const listRef = useRef<CommitListHandle>(null);
 
   /**
    * リポジトリを読み直す。
@@ -69,7 +71,7 @@ function App() {
         listBranches(info.path),
         listWorktrees(info.path),
         // 未コミットの変更。件数だけ先に出して、中身は開いたときに取る
-        diffSummary(info.path, null, null).catch(() => null),
+        worktreeChangeCount(info.path).catch(() => 0),
       ]);
       setRepo(info);
       setCommits(list);
@@ -98,7 +100,7 @@ function App() {
       setCommits([]);
       setBranches([]);
       setWorktrees([]);
-      setWorktreeChanges(null);
+      setWorktreeChanges(0);
       setSelectedId(null);
     } finally {
       setLoading(false);
@@ -141,12 +143,32 @@ function App() {
       setNotice(null);
       setWorktreeSelected(false);
       setSelectedId(id);
-      requestAnimationFrame(() => {
-        document.getElementById(`commit-${id}`)?.scrollIntoView({ block: "center" });
-      });
+      listRef.current?.scrollToCommit(id);
     },
     [commits],
   );
+
+  /** グラフの行を選ぶ。行コンポーネントの memo を効かせるため参照を固定する */
+  const selectCommit = useCallback((id: string) => {
+    setWorktreeSelected(false);
+    setSelectedId(id);
+    setTab("detail");
+  }, []);
+
+  const selectWorktree = useCallback(() => {
+    setWorktreeSelected(true);
+    setTab("detail");
+  }, []);
+
+  /** ブランチとワークツリーの一覧だけを取り直す（コミットは変わっていないとき用） */
+  const reloadLists = useCallback(async (path: string) => {
+    const [branchList, worktreeList] = await Promise.all([
+      listBranches(path),
+      listWorktrees(path),
+    ]);
+    setBranches(branchList);
+    setWorktrees(worktreeList);
+  }, []);
 
   /**
    * ブランチのメモを保存して一覧を取り直す。
@@ -157,17 +179,12 @@ function App() {
       if (!repo) return;
       try {
         await setBranchDescription(repo.path, branch, description);
-        const [branchList, worktreeList] = await Promise.all([
-          listBranches(repo.path),
-          listWorktrees(repo.path),
-        ]);
-        setBranches(branchList);
-        setWorktrees(worktreeList);
+        await reloadLists(repo.path);
       } catch (e) {
         setError(String(e));
       }
     },
-    [repo],
+    [repo, reloadLists],
   );
 
   // サイドバーの幅をドラッグで変える
@@ -197,17 +214,22 @@ function App() {
   useEffect(() => {
     if (!repoPath) return;
     let stopped = false;
-    let previous: string | null = null;
+    let previous: RepoFingerprint | null = null;
 
     const tick = async () => {
       if (stopped || document.visibilityState === "hidden") return;
       try {
         const fp = await repoFingerprint(repoPath);
-        const key = `${fp.refs}:${fp.head}:${fp.worktrees}`;
-        if (previous !== null && key !== previous) {
-          await load(repoPath, { silent: true, keepSelection: true });
+        if (previous !== null) {
+          if (fp.refs !== previous.refs || fp.head !== previous.head) {
+            // ref か HEAD が動いた。コミットの集合が変わりうるので全部読み直す
+            await load(repoPath, { silent: true, keepSelection: true });
+          } else if (fp.worktrees !== previous.worktrees) {
+            // ワークツリーの追加・削除だけ。コミットは変わらないので一覧だけ取り直す
+            await reloadLists(repoPath);
+          }
         }
-        previous = key;
+        previous = fp;
         // 変化が無くても「確認できた」ことは出す
         setCheckedAt(Date.now());
       } catch {
@@ -221,7 +243,7 @@ function App() {
       stopped = true;
       window.clearInterval(id);
     };
-  }, [repoPath, load]);
+  }, [repoPath, load, reloadLists]);
 
   // 未コミットの変更の件数だけを定期的に取り直す
   useEffect(() => {
@@ -229,8 +251,8 @@ function App() {
     let stopped = false;
     const id = window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
-      void diffSummary(repoPath, null, null)
-        .then((s) => !stopped && setWorktreeChanges(s))
+      void worktreeChangeCount(repoPath)
+        .then((n) => !stopped && setWorktreeChanges(n))
         .catch(() => undefined);
     }, WORKTREE_INTERVAL_MS);
     return () => {
@@ -289,19 +311,13 @@ function App() {
       {repo && commits.length > 0 && (
         <main className="content" ref={contentRef}>
           <CommitList
+            ref={listRef}
             graph={graph}
             selectedId={worktreeSelected ? null : selectedId}
-            onSelect={(id) => {
-              setWorktreeSelected(false);
-              setSelectedId(id);
-              setTab("detail");
-            }}
-            worktreeChanges={worktreeChanges?.files.length ?? 0}
+            onSelect={selectCommit}
+            worktreeChanges={worktreeChanges}
             worktreeSelected={worktreeSelected}
-            onSelectWorktree={() => {
-              setWorktreeSelected(true);
-              setTab("detail");
-            }}
+            onSelectWorktree={selectWorktree}
           />
           <div
             className="splitter"
