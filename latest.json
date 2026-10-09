@@ -1,11 +1,11 @@
 {
-  "version": "1.5.0",
-  "notes": "## 変更\n\n- テーマを選べるようにしました。ツールバー右端の ⚙ から\n  「OS に従う / ライト / ダーク / カスタム」を切り替えられます。\n- カスタムは基調色を 1 色選ぶと、文字色・枠線・選択色をそこから自動で決めます。\n- 設定は `%APPDATA%\\jp.asuzacgroup.gitgraph\\settings.json` に保存されます。\n\n## インストール\n\n`Git Graph_1.5.0_x64-setup.exe` を実行してください（管理者権限が必要です）。\n起動時の更新通知からも適用できます。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）\n- 管理者権限",
-  "pub_date": "2026-10-09T15:13:11Z",
+  "version": "1.6.0",
+  "notes": "## 変更\n\n- 「未マージ」の判定相手を、チェックアウト中のブランチ（HEAD）から**マージ基準**に変えました。\n  マージ基準はローカルの main / master / develop を順に探して決めます。\n  別のブランチをチェックアウトしたワークツリーから見ても、判定が変わらなくなります。\n  基準はブランチ一覧の上の「基準」で変えられ、リポジトリごとに記憶します。\n- ブランチ一覧を「作業中 / 未マージ / マージ済み」に分けて表示します。\n  - 作業中: ワークツリーで開いていて、未コミットの変更があるブランチ\n  - マージ済み: 削除候補として畳んで表示\n- 上流に無いコミットがあるブランチ（上流が無いものを含む）に「未 push」バッジを付けます。\n- ブランチを選ぶと、基準に無い変更（共通祖先からの差分）をファイル単位で見られます。\n  メモが無くても「このブランチで何を作っていたか」が分かります。\n- ワークツリー一覧に未コミットの変更の件数を出します。\n\n## ご注意\n\n判定の意味が変わるため、これまで「マージ済み」だったブランチが「未マージ」になる\n（またはその逆の）場合があります。基準が意図と違うときは「基準」で選び直してください。\n\n## インストール\n\n`Git Graph_1.6.0_x64-setup.exe` を実行してください（管理者権限が必要です）。\n起動時の更新通知からも適用できます。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）\n- 管理者権限",
+  "pub_date": "2026-10-09T15:23:52Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUUExQ2RvV2hzdDJTalJLeXBMMTR4Z0FySnhZYkxFZ3lMWm1mdFN6a3dFZUo2bDRPeXcxMWFScDM3YUQ4ckpRNkh2WVFtbFIySzl2SldoVUx5RGFyY3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTU4NzQ3CWZpbGU6R2l0IEdyYXBoXzEuNS4wX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjUuMApaMmRPd2FxTzBISFoyRU5INkk1SHkrSUFkaG1hR3ZHeEJLdlVKd2p1ek9oZll2Vm9CMU1EWjI3ZXE0OXAxVzBIVHlCaVVEa2ltRkNBV0VMZ1NZY21BUT09Cg==",
-      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.5.0/Git%20Graph_1.5.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUUdHNlRoRDJ6eGhBd3NnZXJqNzF0NEdpTHh3K1VZb2Qwcnl2U3A4YURZVEc1Ynpob1dIZVgvSHRFL2ZMK3JuZUFhMzdKRjdEQlE5eUZKOFZCZzBZb1E4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTU5Mzg5CWZpbGU6R2l0IEdyYXBoXzEuNi4wX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjYuMAo4eFNIbTFoSHRORXBmKy9DN21zR3FLVjluSHlMZ0hIYmVjRXg2NWVhL1ZHU2plY0lJWElnWGMxYTFlTnY5NUFheXppTll0T3l2T0hHYlNiWmFXRHRCZz09Cg==",
+      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.6.0/Git%20Graph_1.6.0_x64-setup.exe"
     }
   }
 }
