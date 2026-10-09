@@ -201,9 +201,66 @@ export function listWorktrees(path) {
   return list;
 }
 
-export function listBranches(path) {
+/** マージ基準の自動検出で試す順（Rust 側と同じ） */
+const MERGE_BASE_CANDIDATES = ["main", "master", "develop"];
+
+function localBranchExists(repo, name) {
+  try {
+    git(repo, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** マージ基準を決める。preferred は設定で指定された名前 */
+export function mergeBaseInfo(path, preferred) {
+  const info = repoInfo(path);
+  const build = (name, source, settingMissing) => ({
+    name,
+    commit: name ? git(info.path, ["rev-parse", `refs/heads/${name}`]).trim() : info.headCommit,
+    source,
+    settingMissing,
+  });
+  let settingMissing = false;
+  const wanted = (preferred ?? "").trim();
+  if (wanted !== "") {
+    if (localBranchExists(info.path, wanted)) return build(wanted, "setting", false);
+    settingMissing = true;
+  }
+  for (const name of MERGE_BASE_CANDIDATES) {
+    if (localBranchExists(info.path, name)) return build(name, "auto", settingMissing);
+  }
+  return build(null, "head", settingMissing);
+}
+
+/** 2 コミットの共通祖先。無ければ null */
+export function mergeBaseCommit(path, a, b) {
+  const info = repoInfo(path);
+  try {
+    return git(info.path, ["merge-base", a, b]).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 全ワークツリーの未コミット変更の件数 */
+export function listWorktreeChanges(path) {
+  const info = repoInfo(path);
+  return listWorktrees(info.path).map((wt) => {
+    try {
+      return { path: wt.path, changes: worktreeChangeCount(wt.path) };
+    } catch {
+      return { path: wt.path, changes: null };
+    }
+  });
+}
+
+export function listBranches(path, mergeBase) {
   const info = repoInfo(path);
   if (info.isEmpty) return [];
+
+  const base = mergeBaseInfo(info.path, mergeBase);
 
   // ブランチ名 -> それを開いているワークツリーのパス
   const byBranch = new Map();
@@ -238,14 +295,17 @@ export function listBranches(path) {
     const isRemote = fullref.startsWith("refs/remotes/");
 
     // --left-right --count は「左だけにある数」「右だけにある数」を返す
-    let ahead = 0;
-    let behind = 0;
-    try {
-      const counts = git(info.path, ["rev-list", "--left-right", "--count", `${target}...HEAD`]);
-      [ahead, behind] = counts.trim().split(/\s+/).map(Number);
-    } catch {
-      // HEAD が無い等。0 のままにする
-    }
+    const leftRight = (other) => {
+      try {
+        const counts = git(info.path, ["rev-list", "--left-right", "--count", `${target}...${other}`]);
+        return counts.trim().split(/\s+/).map(Number);
+      } catch {
+        return [0, 0];
+      }
+    };
+    const [ahead, behind] = base.commit ? leftRight(base.commit) : [0, 0];
+    // 上流が無い、または上流に無いコミットがあれば「未 push」
+    const unpushed = !isRemote && (upstream ? leftRight(upstream)[0] > 0 : true);
 
     return {
       name,
@@ -253,9 +313,11 @@ export function listBranches(path) {
       target,
       isHead,
       upstream: upstream || null,
-      merged: ahead === 0,
+      merged: base.commit !== null && ahead === 0,
       ahead,
       behind,
+      isMergeBase: !isRemote && base.name === name,
+      unpushed,
       lastCommitTime: Number(time ?? 0),
       lastCommitSummary: summary ?? "",
       lastCommitAuthor: author ?? "",
@@ -502,13 +564,22 @@ export function repoFingerprint(path) {
 /** ブラウザプレビュー用の設定ファイル。Tauri の設定ディレクトリの代わりに一時フォルダへ置く */
 const SETTINGS_FILE = join(tmpdir(), "git-graph-dev-settings.json");
 
-const DEFAULT_SETTINGS = { theme: { mode: "system", baseColor: "#1b1d23" } };
+/** 既定値。Rust 側の `settings::Settings::default()` と揃える */
+const DEFAULT_SETTINGS = {
+  theme: { mode: "system", baseColor: "#1b1d23" },
+  repositories: [],
+};
 
 export function loadSettings() {
   if (!existsSync(SETTINGS_FILE)) return DEFAULT_SETTINGS;
   const parsed = JSON.parse(readFileSync(SETTINGS_FILE, "utf8"));
   // Rust 側の serde(default) と同じく、無い項目は既定値で埋める
-  return { ...DEFAULT_SETTINGS, ...parsed, theme: { ...DEFAULT_SETTINGS.theme, ...parsed.theme } };
+  return {
+    ...DEFAULT_SETTINGS,
+    ...parsed,
+    theme: { ...DEFAULT_SETTINGS.theme, ...parsed.theme },
+    repositories: Array.isArray(parsed.repositories) ? parsed.repositories : [],
+  };
 }
 
 export function saveSettings(json) {
@@ -609,9 +680,28 @@ export function gitApiMiddleware(req, res, next) {
       case "/__git/save_settings":
         return send(200, saveSettings(url.searchParams.get("json") ?? "{}"));
       case "/__git/list_branches":
-        return send(200, listBranches(url.searchParams.get("path") ?? "."));
+        return send(
+          200,
+          listBranches(url.searchParams.get("path") ?? ".", url.searchParams.get("mergeBase")),
+        );
+      case "/__git/merge_base_info":
+        return send(
+          200,
+          mergeBaseInfo(url.searchParams.get("path") ?? ".", url.searchParams.get("preferred")),
+        );
+      case "/__git/merge_base_commit":
+        return send(
+          200,
+          mergeBaseCommit(
+            url.searchParams.get("path") ?? ".",
+            url.searchParams.get("a") ?? "",
+            url.searchParams.get("b") ?? "",
+          ),
+        );
       case "/__git/list_worktrees":
         return send(200, listWorktrees(url.searchParams.get("path") ?? "."));
+      case "/__git/list_worktree_changes":
+        return send(200, listWorktreeChanges(url.searchParams.get("path") ?? "."));
       case "/__git/list_commits":
         return send(
           200,

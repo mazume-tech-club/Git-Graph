@@ -37,11 +37,15 @@ export type BranchInfo = {
   isHead: boolean;
   /** 追跡しているリモートブランチ名 */
   upstream: string | null;
-  /** HEAD に取り込み済みか */
+  /** マージ基準に取り込み済みか */
   merged: boolean;
-  /** HEAD を基準にした差分。ahead = HEAD に無いコミット数 */
+  /** マージ基準との差分。ahead = マージ基準に無いコミット数 */
   ahead: number;
   behind: number;
+  /** このブランチ自身がマージ基準か */
+  isMergeBase: boolean;
+  /** 上流に無いコミットがあるか（上流が無いローカルブランチも true）。リモート追跡ブランチは false */
+  unpushed: boolean;
   lastCommitTime: number;
   lastCommitSummary: string;
   lastCommitAuthor: string;
@@ -136,4 +140,31 @@ export type ThemeSettings = {
 /** 設定ファイルの内容。Rust 側の `settings::Settings` と 1 対 1 */
 export type Settings = {
   theme: ThemeSettings;
+  repositories: RepositorySettings[];
+};
+
+export type MergeBaseSource = "setting" | "auto" | "head";
+
+/** 「取り込まれたか」を判定する相手となる統合ブランチ */
+export type MergeBaseInfo = {
+  /** ローカルブランチ名。HEAD を使うときは null */
+  name: string | null;
+  commit: string | null;
+  source: MergeBaseSource;
+  /** 設定で指定された名前がローカルブランチとして存在しなかったか */
+  settingMissing: boolean;
+};
+
+/** ワークツリー 1 つ分の未コミット変更の件数 */
+export type WorktreeChanges = {
+  path: string;
+  /** 変更ファイル数。ワークツリーを開けなかったときは null */
+  changes: number | null;
+};
+
+/** リポジトリごとの設定 */
+export type RepositorySettings = {
+  path: string;
+  /** マージ基準のローカルブランチ名。null なら自動検出 */
+  mergeBase: string | null;
 };

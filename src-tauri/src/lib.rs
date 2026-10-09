@@ -5,7 +5,10 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, WindowEvent};
 
-use git::{BranchInfo, CommitInfo, DiffSummary, FileDiff, RepoFingerprint, RepoInfo, WorktreeInfo};
+use git::{
+    BranchInfo, CommitInfo, DiffSummary, FileDiff, MergeBaseInfo, RepoFingerprint, RepoInfo,
+    WorktreeChanges, WorktreeInfo,
+};
 use settings::Settings;
 
 /// 指定パス（またはその上位）の Git リポジトリを開き、概要を返す。
@@ -20,10 +23,29 @@ fn list_commits(path: String, limit: Option<usize>) -> Result<Vec<CommitInfo>, S
     git::list_commits(&path, limit.unwrap_or(500))
 }
 
-/// ブランチ一覧。HEAD に取り込み済みかどうかも含めて返す。
+/// ブランチ一覧。マージ基準に取り込み済みかどうかも含めて返す。
+/// `merge_base` は設定で指定された基準の名前（無ければ自動検出）。
 #[tauri::command]
-fn list_branches(path: String) -> Result<Vec<BranchInfo>, String> {
-    git::list_branches(&path)
+fn list_branches(path: String, merge_base: Option<String>) -> Result<Vec<BranchInfo>, String> {
+    git::list_branches(&path, merge_base.as_deref())
+}
+
+/// マージ基準がどう決まったかを返す。
+#[tauri::command]
+fn merge_base_info(path: String, preferred: Option<String>) -> Result<MergeBaseInfo, String> {
+    git::merge_base_info(&path, preferred.as_deref())
+}
+
+/// 2 コミットの共通祖先。ブランチの変更内容（基準からの差分）の起点に使う。
+#[tauri::command]
+fn merge_base_commit(path: String, a: String, b: String) -> Result<Option<String>, String> {
+    git::merge_base_commit(&path, &a, &b)
+}
+
+/// 全ワークツリーの未コミット変更の件数。
+#[tauri::command]
+fn list_worktree_changes(path: String) -> Result<Vec<WorktreeChanges>, String> {
+    git::list_worktree_changes(&path)
 }
 
 /// ワークツリー一覧。
@@ -128,7 +150,10 @@ pub fn run() {
             open_repository,
             list_commits,
             list_branches,
+            merge_base_info,
+            merge_base_commit,
             list_worktrees,
+            list_worktree_changes,
             diff_summary,
             file_diff,
             repo_fingerprint,

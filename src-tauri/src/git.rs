@@ -69,11 +69,15 @@ pub struct BranchInfo {
     pub is_head: bool,
     /// 追跡しているリモートブランチ名
     pub upstream: Option<String>,
-    /// HEAD に取り込み済みか（HEAD から到達できるか）
+    /// マージ基準に取り込み済みか（マージ基準から到達できるか）
     pub merged: bool,
-    /// HEAD を基準にした差分。ahead = HEAD に無いコミット数
+    /// マージ基準との差分。ahead = マージ基準に無いコミット数
     pub ahead: usize,
     pub behind: usize,
+    /// このブランチ自身がマージ基準か
+    pub is_merge_base: bool,
+    /// 上流に無いコミットがあるか（上流が無いローカルブランチも true）。リモート追跡ブランチは false
+    pub unpushed: bool,
     pub last_commit_time: i64,
     pub last_commit_summary: String,
     pub last_commit_author: String,
@@ -390,18 +394,104 @@ fn ahead_behind(repo: &Repository, local: Oid, upstream: Oid) -> (usize, usize) 
     result
 }
 
-/// ローカル / リモート追跡ブランチの一覧。HEAD との関係も付けて返す。
-pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
+/// マージ基準の決まり方
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeBaseSource {
+    /// 設定でリポジトリごとに指定されたもの
+    Setting,
+    /// main / master / develop の順で見つかったもの
+    Auto,
+    /// 統合ブランチが見つからず HEAD を使っている
+    Head,
+}
+
+/// 「取り込まれたか」を判定する相手となる統合ブランチ。
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeBaseInfo {
+    /// ローカルブランチ名。HEAD を使うときは None
+    pub name: Option<String>,
+    pub commit: Option<String>,
+    pub source: MergeBaseSource,
+    /// 設定で指定された名前がローカルブランチとして存在しなかったか
+    pub setting_missing: bool,
+}
+
+/// マージ基準の自動検出で試す順。ローカルブランチだけを見る。
+/// リモートの既定ブランチ（origin/HEAD）は、ローカルで取り込んだが push していない
+/// ものを未マージと誤判定するので使わない
+const MERGE_BASE_CANDIDATES: [&str; 3] = ["main", "master", "develop"];
+
+fn local_branch_oid(repo: &Repository, name: &str) -> Option<Oid> {
+    repo.find_branch(name, BranchType::Local)
+        .ok()
+        .and_then(|b| b.get().target())
+}
+
+/// マージ基準を決める。`preferred` は設定で指定された名前。
+pub fn merge_base_info(path: &str, preferred: Option<&str>) -> Result<MergeBaseInfo, String> {
+    let repo = open(path)?;
+    Ok(resolve_merge_base(&repo, preferred))
+}
+
+fn resolve_merge_base(repo: &Repository, preferred: Option<&str>) -> MergeBaseInfo {
+    let mut setting_missing = false;
+    if let Some(name) = preferred.map(str::trim).filter(|n| !n.is_empty()) {
+        if let Some(oid) = local_branch_oid(repo, name) {
+            return MergeBaseInfo {
+                name: Some(name.to_string()),
+                commit: Some(oid.to_string()),
+                source: MergeBaseSource::Setting,
+                setting_missing: false,
+            };
+        }
+        setting_missing = true;
+    }
+    for name in MERGE_BASE_CANDIDATES {
+        if let Some(oid) = local_branch_oid(repo, name) {
+            return MergeBaseInfo {
+                name: Some(name.to_string()),
+                commit: Some(oid.to_string()),
+                source: MergeBaseSource::Auto,
+                setting_missing,
+            };
+        }
+    }
+    MergeBaseInfo {
+        name: None,
+        commit: repo
+            .head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok())
+            .map(|c| c.id().to_string()),
+        source: MergeBaseSource::Head,
+        setting_missing,
+    }
+}
+
+/// 2 つのコミットの共通祖先。無ければ None（履歴がつながっていない）
+pub fn merge_base_commit(path: &str, a: &str, b: &str) -> Result<Option<String>, String> {
+    let repo = open(path)?;
+    let parse =
+        |s: &str| Oid::from_str(s).map_err(|e| format!("コミット ID が不正です: {}", e.message()));
+    Ok(repo
+        .merge_base(parse(a)?, parse(b)?)
+        .ok()
+        .map(|oid| oid.to_string()))
+}
+
+/// ローカル / リモート追跡ブランチの一覧。マージ基準との関係も付けて返す。
+///
+/// `merge_base` は設定で指定されたマージ基準の名前。省略時や存在しないときは自動検出する。
+pub fn list_branches(path: &str, merge_base: Option<&str>) -> Result<Vec<BranchInfo>, String> {
     let repo = open(path)?;
     if repo.is_empty().unwrap_or(false) {
         return Ok(Vec::new());
     }
 
-    let head_oid = repo
-        .head()
-        .ok()
-        .and_then(|h| h.peel_to_commit().ok())
-        .map(|c| c.id());
+    let base = resolve_merge_base(&repo, merge_base);
+    let base_oid = base.commit.as_deref().and_then(|c| Oid::from_str(c).ok());
     let worktrees = worktree_by_branch(&repo);
     let config = config_snapshot(&repo);
 
@@ -423,13 +513,21 @@ pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
                 continue;
             };
 
-            // HEAD との差分。ahead が 0 なら HEAD に取り込み済み
-            let (ahead, behind) = match head_oid {
-                Some(head) => ahead_behind(&repo, target, head),
+            // マージ基準との差分。ahead が 0 なら取り込み済み
+            let (ahead, behind) = match base_oid {
+                Some(base) => ahead_behind(&repo, target, base),
                 None => (0, 0),
             };
 
             let is_local = branch_type == BranchType::Local;
+            let is_merge_base = is_local && base.name.as_deref() == Some(name.as_str());
+            let upstream_branch = branch.upstream().ok();
+            // 上流が無い、または上流に無いコミットがあれば「未 push」
+            let unpushed = is_local
+                && match upstream_branch.as_ref().and_then(|u| u.get().target()) {
+                    Some(up) => ahead_behind(&repo, target, up).0 > 0,
+                    None => true,
+                };
             branches.push(BranchInfo {
                 kind: if is_local {
                     if branch.is_head() {
@@ -441,13 +539,14 @@ pub fn list_branches(path: &str) -> Result<Vec<BranchInfo>, String> {
                     RefKind::RemoteBranch
                 },
                 is_head: branch.is_head(),
-                upstream: branch
-                    .upstream()
-                    .ok()
+                upstream: upstream_branch
+                    .as_ref()
                     .and_then(|u| u.name().ok().flatten().map(str::to_string)),
-                merged: head_oid.is_some() && ahead == 0,
+                merged: base_oid.is_some() && ahead == 0,
                 ahead,
                 behind,
+                is_merge_base,
+                unpushed,
                 last_commit_time: commit.time().seconds(),
                 last_commit_summary: commit
                     .summary()
@@ -940,6 +1039,10 @@ pub fn fingerprint(path: &str) -> Result<RepoFingerprint, String> {
 /// 未追跡ディレクトリは中を辿らず 1 件と数える（`diff_summary` と同じ数え方）。
 pub fn worktree_change_count(path: &str) -> Result<usize, String> {
     let repo = open(path)?;
+    change_count(&repo)
+}
+
+fn change_count(repo: &Repository) -> Result<usize, String> {
     if repo.is_bare() {
         return Ok(0);
     }
@@ -954,6 +1057,48 @@ pub fn worktree_change_count(path: &str) -> Result<usize, String> {
         .statuses(Some(&mut opts))
         .map_err(|e| e.message().to_string())?;
     Ok(statuses.iter().filter(|s| !s.status().is_empty()).count())
+}
+
+/// ワークツリー 1 つ分の未コミット変更の件数
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeChanges {
+    pub path: String,
+    /// 変更ファイル数。ワークツリーを開けなかったときは None
+    pub changes: Option<usize>,
+}
+
+/// 全ワークツリー（メイン含む）の未コミット変更の件数。
+///
+/// ブランチの主状態「作業中」（ワークツリーで開かれていて未コミット変更がある）を
+/// 決めるために、読み込み時と 30 秒ごとに呼ぶ。`list_worktrees` と同じ順で返す。
+pub fn list_worktree_changes(path: &str) -> Result<Vec<WorktreeChanges>, String> {
+    let repo = open(path)?;
+    let mut list = Vec::new();
+
+    if let Some(dir) = main_workdir(&repo) {
+        let changes = Repository::open(&dir)
+            .ok()
+            .and_then(|main| change_count(&main).ok());
+        list.push(WorktreeChanges { path: dir, changes });
+    }
+
+    let Ok(names) = repo.worktrees() else {
+        return Ok(list);
+    };
+    for name in names.iter().filter_map(|n| n.ok().flatten()) {
+        let Ok(worktree) = repo.find_worktree(name) else {
+            continue;
+        };
+        let changes = Repository::open_from_worktree(&worktree)
+            .ok()
+            .and_then(|wt| change_count(&wt).ok());
+        list.push(WorktreeChanges {
+            path: worktree.path().to_string_lossy().to_string(),
+            changes,
+        });
+    }
+    Ok(list)
 }
 
 /// ブランチの説明を設定する。空文字や None のときは設定を消す。
@@ -1205,9 +1350,9 @@ mod tests {
     }
 
     #[test]
-    fn list_branches_reports_merge_state_against_head() {
+    fn list_branches_reports_merge_state_against_merge_base() {
         let (dir, _outside) = fixture_with_worktree();
-        let branches = list_branches(&path_of(&dir)).unwrap();
+        let branches = list_branches(&path_of(&dir), None).unwrap();
         let by_name: HashMap<&str, &BranchInfo> =
             branches.iter().map(|b| (b.name.as_str(), b)).collect();
 
@@ -1234,7 +1379,7 @@ mod tests {
     #[test]
     fn list_branches_links_branches_to_their_worktree() {
         let (dir, _outside) = fixture_with_worktree();
-        let branches = list_branches(&path_of(&dir)).unwrap();
+        let branches = list_branches(&path_of(&dir), None).unwrap();
         let by_name: HashMap<&str, &BranchInfo> =
             branches.iter().map(|b| (b.name.as_str(), b)).collect();
 
@@ -1282,7 +1427,7 @@ mod tests {
     fn list_branches_on_empty_repository() {
         let dir = TempDir::new().unwrap();
         Repository::init(dir.path()).unwrap();
-        assert!(list_branches(&path_of(&dir)).unwrap().is_empty());
+        assert!(list_branches(&path_of(&dir), None).unwrap().is_empty());
     }
 
     /// 実ファイルを持つリポジトリを作る。差分のテストには中身が要る。
@@ -1543,6 +1688,148 @@ mod tests {
     }
 
     #[test]
+    fn merge_base_is_detected_in_fixed_order_and_setting_wins() {
+        let dir = fixture();
+        let path = path_of(&dir);
+
+        // 指定が無ければ main
+        let auto = merge_base_info(&path, None).unwrap();
+        assert_eq!(auto.name.as_deref(), Some("main"));
+        assert_eq!(auto.source, MergeBaseSource::Auto);
+        assert!(!auto.setting_missing);
+
+        // 設定で存在するブランチを指定すればそれ
+        let set = merge_base_info(&path, Some("feature")).unwrap();
+        assert_eq!(set.name.as_deref(), Some("feature"));
+        assert_eq!(set.source, MergeBaseSource::Setting);
+
+        // 存在しない名前なら自動検出に戻り、その旨を伝える
+        let missing = merge_base_info(&path, Some("no-such")).unwrap();
+        assert_eq!(missing.name.as_deref(), Some("main"));
+        assert_eq!(missing.source, MergeBaseSource::Auto);
+        assert!(missing.setting_missing);
+
+        // 空白だけの指定は無指定と同じ
+        assert_eq!(
+            merge_base_info(&path, Some("  ")).unwrap().source,
+            MergeBaseSource::Auto
+        );
+    }
+
+    #[test]
+    fn merge_base_falls_back_to_head_without_integration_branch() {
+        let dir = TempDir::new().unwrap();
+        let mut opts = RepositoryInitOptions::new();
+        opts.initial_head("trunk");
+        let repo = Repository::init_opts(dir.path(), &opts).unwrap();
+        commit_on(&repo, "HEAD", "A", 1_000, &[]);
+
+        let info = merge_base_info(&path_of(&dir), None).unwrap();
+        assert_eq!(info.name, None);
+        assert_eq!(info.source, MergeBaseSource::Head);
+        assert!(info.commit.is_some());
+    }
+
+    #[test]
+    fn list_branches_judges_against_given_merge_base() {
+        let (dir, _outside) = fixture_with_worktree();
+        // 基準を stale にすると、main は stale に無い C/D/M の 3 件分 ahead で未マージ扱い
+        let branches = list_branches(&path_of(&dir), Some("stale")).unwrap();
+        let by_name: HashMap<&str, &BranchInfo> =
+            branches.iter().map(|b| (b.name.as_str(), b)).collect();
+
+        assert!(by_name["stale"].is_merge_base);
+        assert!(by_name["stale"].merged);
+        assert!(!by_name["main"].is_merge_base);
+        assert!(!by_name["main"].merged);
+        assert_eq!((by_name["main"].ahead, by_name["main"].behind), (3, 1));
+    }
+
+    #[test]
+    fn list_branches_flags_unpushed_against_upstream() {
+        let dir = fixture();
+        let path = path_of(&dir);
+        let repo = Repository::open(dir.path()).unwrap();
+
+        // 上流が無いローカルブランチは未 push
+        let before = list_branches(&path, None).unwrap();
+        assert!(before.iter().find(|b| b.name == "main").unwrap().unpushed);
+
+        // main と同じ位置にリモート追跡ブランチを作って上流にすると push 済み
+        // （上流の設定にはリモートの定義が要る。URL は使わない）
+        repo.remote("origin", "https://example.invalid/repo.git")
+            .unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.reference("refs/remotes/origin/main", head.id(), true, "")
+            .unwrap();
+        repo.find_branch("main", BranchType::Local)
+            .unwrap()
+            .set_upstream(Some("origin/main"))
+            .unwrap();
+        let synced = list_branches(&path, None).unwrap();
+        let by_name: HashMap<&str, &BranchInfo> =
+            synced.iter().map(|b| (b.name.as_str(), b)).collect();
+        assert!(!by_name["main"].unpushed);
+        assert_eq!(by_name["main"].upstream.as_deref(), Some("origin/main"));
+        // リモート追跡ブランチ自体は対象外
+        assert!(!by_name["origin/main"].unpushed);
+
+        // 上流を 1 つ前に戻すと、上流に無いコミットがあるので未 push
+        let parent = head.parent(0).unwrap();
+        repo.reference("refs/remotes/origin/main", parent.id(), true, "")
+            .unwrap();
+        let behind = list_branches(&path, None).unwrap();
+        assert!(behind.iter().find(|b| b.name == "main").unwrap().unpushed);
+    }
+
+    #[test]
+    fn merge_base_commit_finds_common_ancestor() {
+        let dir = fixture();
+        let path = path_of(&dir);
+        let repo = Repository::open(dir.path()).unwrap();
+        // D (main^) と C (feature) は B から分かれている
+        let d = repo.revparse_single("main^").unwrap().id().to_string();
+        let feature = repo.revparse_single("feature").unwrap().id().to_string();
+        let b = repo.revparse_single("main~2").unwrap().id().to_string();
+        assert_eq!(merge_base_commit(&path, &d, &feature).unwrap(), Some(b));
+
+        // C は M に取り込まれているので、M と C の共通祖先は C 自身
+        let main = repo.revparse_single("main").unwrap().id().to_string();
+        assert_eq!(
+            merge_base_commit(&path, &main, &feature).unwrap(),
+            Some(feature.clone())
+        );
+        assert!(merge_base_commit(&path, "zzz", &feature).is_err());
+    }
+
+    #[test]
+    fn list_worktree_changes_counts_each_worktree() {
+        let (dir, outside) = fixture_with_worktree();
+        let path = path_of(&dir);
+
+        let clean = list_worktree_changes(&path).unwrap();
+        assert_eq!(clean.len(), 2);
+        assert!(clean.iter().all(|w| w.changes == Some(0)));
+
+        // 別ワークツリーだけを汚す
+        std::fs::write(outside.path().join("wt-feature/new.txt"), "x").unwrap();
+        let dirty = list_worktree_changes(&path).unwrap();
+        let by_path: HashMap<&str, Option<usize>> =
+            dirty.iter().map(|w| (w.path.as_str(), w.changes)).collect();
+        let wt = dirty
+            .iter()
+            .find(|w| w.path.contains("wt-feature"))
+            .unwrap();
+        assert_eq!(wt.changes, Some(1));
+        // メインの方は変わらない（ワークツリーごとに独立して数える）
+        let main = dirty
+            .iter()
+            .find(|w| !w.path.contains("wt-feature"))
+            .unwrap();
+        assert_eq!(by_path[main.path.as_str()], Some(0));
+    }
+
+    #[test]
     fn fingerprint_refs_digest_ignores_worktree_count() {
         // ワークツリーの増減は worktrees の項目だけに出て、refs のダイジェストは変えない。
         // フロントが「ワークツリーだけ変わった」と見分けて一覧だけ取り直すため
@@ -1586,8 +1873,8 @@ mod tests {
         let dir = fixture();
         let path = path_of(&dir);
         // 1 回目で計算し、2 回目はキャッシュから返る。どちらも同じ値であること
-        let first = list_branches(&path).unwrap();
-        let second = list_branches(&path).unwrap();
+        let first = list_branches(&path, None).unwrap();
+        let second = list_branches(&path, None).unwrap();
         for (a, b) in first.iter().zip(second.iter()) {
             assert_eq!((a.ahead, a.behind), (b.ahead, b.behind), "{}", a.name);
         }
@@ -1609,7 +1896,7 @@ mod tests {
             .set_str("branch.stale.description", "   ")
             .unwrap();
 
-        let branches = list_branches(&path_of(&dir)).unwrap();
+        let branches = list_branches(&path_of(&dir), None).unwrap();
         let by_name: HashMap<&str, &BranchInfo> =
             branches.iter().map(|b| (b.name.as_str(), b)).collect();
 
@@ -1654,7 +1941,7 @@ mod tests {
         let path = path_of(&dir);
 
         let description_of = |name: &str| -> Option<String> {
-            list_branches(&path)
+            list_branches(&path, None)
                 .unwrap()
                 .into_iter()
                 .find(|b| b.name == name)

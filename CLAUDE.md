@@ -76,8 +76,11 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 |---------|------|--------|
 | `open_repository` | `path` | `RepoInfo` |
 | `list_commits` | `path`, `limit`(既定 500) | `CommitInfo[]` |
-| `list_branches` | `path` | `BranchInfo[]` |
+| `list_branches` | `path`, `mergeBase?` | `BranchInfo[]` |
+| `merge_base_info` | `path`, `preferred?` | `MergeBaseInfo` |
+| `merge_base_commit` | `path`, `a`, `b` | `String?` |
 | `list_worktrees` | `path` | `WorktreeInfo[]` |
+| `list_worktree_changes` | `path` | `WorktreeChanges[]` |
 | `diff_summary` | `path`, `from?`, `to?` | `DiffSummary` |
 | `file_diff` | `path`, `from?`, `to?`, `file` | `FileDiff` |
 | `set_branch_description` | `path`, `branch`, `description?` | `()` |
@@ -110,6 +113,28 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 描画は行ごとに独立した SVG で、行の上半分（合流）と下半分（分岐）を描く。
 
 `scripts/check-lanes.mjs` が 7 つの不変条件を検査する。レーン周りを触ったら必ず流す。
+
+### マージ基準とブランチの主状態
+
+用語は `GLOSSARY.md`、HEAD ではなく基準で判定する理由は `docs/adr/0002`。
+
+- **マージ基準**はローカルの `main` → `master` → `develop` の順で自動検出し、
+  リポジトリごとに設定（`settings.json` の `repositories[].mergeBase`）で上書きできる。
+  どれも無ければ HEAD。リモートの既定ブランチは使わない（push 前の取り込みを
+  未マージと誤判定するため）
+- 設定された名前がローカルに無いときは自動検出に戻り、`settingMissing` で UI に知らせる
+- `BranchInfo.merged` / `ahead` / `behind` はすべてマージ基準との関係。v1.3 以前は HEAD だった
+- **主状態**はフロント（`src/branchState.ts`）で決める。作業中（ワークツリーで開いていて
+  未コミット変更あり）> 未マージ > マージ済み の順で 1 つだけ。マージ基準そのものは
+  グループに入れず先頭に固定する
+- 「作業中」の判定に使う全ワークツリーの変更件数は `list_worktree_changes` で、読み込み時と
+  30 秒ごとに取る。ref の 5 秒より粗いのは status 走査の負荷のため。ワークツリーは
+  通常数個なので全部回しても軽い
+- **未 push** はバッジ（主状態ではない）。上流が無い、または上流に無いコミットがある
+  ローカルブランチに付く。リモート追跡ブランチには付けない
+- 一覧でブランチを選ぶと詳細タブに**ブランチの変更内容**（マージ基準との共通祖先から
+  先端までの差分）を出す。共通祖先は `merge_base_commit`、差分は `diff_summary` の
+  2 コミット指定で取る。グラフの行を選ぶとブランチの選択は解除される
 
 ### 差分の比較基準
 

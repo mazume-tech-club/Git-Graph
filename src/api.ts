@@ -3,9 +3,11 @@ import type {
   Commit,
   DiffSummary,
   FileDiff,
+  MergeBaseInfo,
   RepoFingerprint,
   RepoInfo,
   Settings,
+  WorktreeChanges,
   WorktreeInfo,
 } from "./types";
 
@@ -52,10 +54,41 @@ export async function listCommits(path: string, limit: number): Promise<Commit[]
     : fetchDev<Commit[]>("list_commits", { path, limit: String(limit) });
 }
 
-export async function listBranches(path: string): Promise<BranchInfo[]> {
+/**
+ * ブランチ一覧。`mergeBase` は設定で指定されたマージ基準の名前。
+ * null なら自動検出（main → master → develop）。
+ */
+export async function listBranches(
+  path: string,
+  mergeBase: string | null,
+): Promise<BranchInfo[]> {
   return isTauri
-    ? invokeTauri<BranchInfo[]>("list_branches", { path })
-    : fetchDev<BranchInfo[]>("list_branches", { path });
+    ? invokeTauri<BranchInfo[]>("list_branches", { path, mergeBase })
+    : fetchDev<BranchInfo[]>("list_branches", optional({ path, mergeBase }));
+}
+
+/** マージ基準がどう決まったか。`preferred` は設定で指定された名前 */
+export async function mergeBaseInfo(
+  path: string,
+  preferred: string | null,
+): Promise<MergeBaseInfo> {
+  return isTauri
+    ? invokeTauri<MergeBaseInfo>("merge_base_info", { path, preferred })
+    : fetchDev<MergeBaseInfo>("merge_base_info", optional({ path, preferred }));
+}
+
+/** 2 コミットの共通祖先。履歴がつながっていなければ null */
+export async function mergeBaseCommit(path: string, a: string, b: string): Promise<string | null> {
+  return isTauri
+    ? invokeTauri<string | null>("merge_base_commit", { path, a, b })
+    : fetchDev<string | null>("merge_base_commit", { path, a, b });
+}
+
+/** 全ワークツリーの未コミット変更の件数。主状態「作業中」の判定に使う */
+export async function listWorktreeChanges(path: string): Promise<WorktreeChanges[]> {
+  return isTauri
+    ? invokeTauri<WorktreeChanges[]>("list_worktree_changes", { path })
+    : fetchDev<WorktreeChanges[]>("list_worktree_changes", { path });
 }
 
 export async function listWorktrees(path: string): Promise<WorktreeInfo[]> {
