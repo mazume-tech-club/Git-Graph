@@ -1,11 +1,11 @@
 {
-  "version": "1.4.0",
-  "notes": "## 変更\n\n- 動作を軽くしました。ブランチが多いリポジトリでの一覧の取得、コミット一覧のスクロール、\n  定期的な自動更新の負荷を下げています。\n  - ブランチごとの ahead / behind の計算結果を記憶し、同じ計算を繰り返さない\n  - コミット一覧は見えている行だけを描く\n  - 未コミットの変更は件数だけを数え、差分の中身は選んだときに取る\n  - ワークツリーの増減だけのときは、ブランチとワークツリーの一覧だけを読み直す\n\n表示や操作は変わりません。\n\n## インストール\n\n`Git Graph_1.4.0_x64-setup.exe` を実行してください（管理者権限が必要です）。\n起動時の更新通知からも適用できます。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）\n- 管理者権限",
-  "pub_date": "2026-10-09T15:03:37Z",
+  "version": "1.5.0",
+  "notes": "## 変更\n\n- テーマを選べるようにしました。ツールバー右端の ⚙ から\n  「OS に従う / ライト / ダーク / カスタム」を切り替えられます。\n- カスタムは基調色を 1 色選ぶと、文字色・枠線・選択色をそこから自動で決めます。\n- 設定は `%APPDATA%\\jp.asuzacgroup.gitgraph\\settings.json` に保存されます。\n\n## インストール\n\n`Git Graph_1.5.0_x64-setup.exe` を実行してください（管理者権限が必要です）。\n起動時の更新通知からも適用できます。\n\n## 動作環境\n\n- Windows 10 / 11（x64）\n- WebView2 ランタイム（Windows 11 には標準搭載）\n- 管理者権限",
+  "pub_date": "2026-10-09T15:13:11Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUUU2eXprOUN2amd6V3hsR0hDd0YwelhVOUJ1VnArY0x2bFlVWmdsQTFVa2IvcGVNYU5iRVVrSGFLM2FuL3d0WTB6cnZJSGUvd2QzSHd2OXlxT3hoa1FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTU4MTgxCWZpbGU6R2l0IEdyYXBoXzEuNC4wX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjQuMApYRE15V0YwbjRZSlRMdlhhVXlJSkdpaTg4VVZvcWRkSUQxTWZnOVpzaE5teDh4encxbldodk1QT2tqZ2FtQXJpKyt4Z2hCamdGejhqeStNaFEwRExEUT09Cg==",
-      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.4.0/Git%20Graph_1.4.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSajVyZ2YySmorUUExQ2RvV2hzdDJTalJLeXBMMTR4Z0FySnhZYkxFZ3lMWm1mdFN6a3dFZUo2bDRPeXcxMWFScDM3YUQ4ckpRNkh2WVFtbFIySzl2SldoVUx5RGFyY3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNTU4NzQ3CWZpbGU6R2l0IEdyYXBoXzEuNS4wX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoxLjUuMApaMmRPd2FxTzBISFoyRU5INkk1SHkrSUFkaG1hR3ZHeEJLdlVKd2p1ek9oZll2Vm9CMU1EWjI3ZXE0OXAxVzBIVHlCaVVEa2ltRkNBV0VMZ1NZY21BUT09Cg==",
+      "url": "http://gitea.asuzacfoods.jp/asuzacfoods/Git-Graph/releases/download/v1.5.0/Git%20Graph_1.5.0_x64-setup.exe"
     }
   }
 }
