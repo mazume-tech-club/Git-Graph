@@ -5,18 +5,30 @@ import {
   listBranches,
   listCommits,
   listWorktrees,
+  loadSettings,
   openRepository,
   pickRepository,
   repoFingerprint,
+  saveSettings,
   setBranchDescription,
   startupRepository,
   worktreeChangeCount,
 } from "./api";
 import { CommitList, type CommitListHandle } from "./components/CommitList";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar, type SidebarTab } from "./components/Sidebar";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { buildGraph } from "./graph/lanes";
-import type { BranchInfo, Commit, RepoFingerprint, RepoInfo, WorktreeInfo } from "./types";
+import { applyTheme } from "./theme";
+import type {
+  BranchInfo,
+  Commit,
+  RepoFingerprint,
+  RepoInfo,
+  Settings,
+  ThemeSettings,
+  WorktreeInfo,
+} from "./types";
 import "./App.css";
 
 const COMMIT_LIMIT = 500;
@@ -28,6 +40,12 @@ const SIDEBAR_MAX = 720;
 const REFRESH_INTERVAL_MS = 5_000;
 /** 未コミットの変更を数え直す間隔。ref より重いので間隔を広くとる */
 const WORKTREE_INTERVAL_MS = 15_000;
+/** 設定の保存をまとめる待ち時間。色の選択中は値が連続して変わるため */
+const SETTINGS_SAVE_DELAY_MS = 400;
+
+const DEFAULT_SETTINGS: Settings = {
+  theme: { mode: "system", baseColor: "#1b1d23" },
+};
 
 function readStoredWidth(): number {
   const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
@@ -52,8 +70,35 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(readStoredWidth);
   /** 最後にリポジトリの変化を確認できた時刻。ポーリングが生きていることの目印 */
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const contentRef = useRef<HTMLElement>(null);
   const listRef = useRef<CommitListHandle>(null);
+  const saveTimer = useRef<number | null>(null);
+
+  // 設定ファイルを読んでテーマを当てる。読めなくても既定値で動かす
+  useEffect(() => {
+    loadSettings()
+      .then(setSettings)
+      .catch((e) => setNotice(`設定を読めなかったので既定値を使います: ${String(e)}`));
+  }, []);
+
+  useEffect(() => {
+    applyTheme(settings.theme);
+  }, [settings.theme]);
+
+  /** テーマを変える。画面には即反映し、保存は少し待ってまとめる */
+  const changeTheme = useCallback((theme: ThemeSettings) => {
+    setSettings((prev) => {
+      const next = { ...prev, theme };
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => {
+        saveTimer.current = null;
+        saveSettings(next).catch((e) => setError(`設定を保存できません: ${String(e)}`));
+      }, SETTINGS_SAVE_DELAY_MS);
+      return next;
+    });
+  }, []);
 
   /**
    * リポジトリを読み直す。
@@ -290,7 +335,23 @@ function App() {
             )}
           </div>
         )}
+        <button
+          type="button"
+          className="settings-button"
+          title="設定"
+          aria-label="設定"
+          onClick={() => setSettingsOpen(true)}
+        >
+          ⚙
+        </button>
       </header>
+
+      <SettingsDialog
+        open={settingsOpen}
+        theme={settings.theme}
+        onChangeTheme={changeTheme}
+        onClose={() => setSettingsOpen(false)}
+      />
 
       <UpdateBanner />
 

@@ -5,6 +5,7 @@ import type {
   FileDiff,
   RepoFingerprint,
   RepoInfo,
+  Settings,
   WorktreeInfo,
 } from "./types";
 
@@ -149,4 +150,18 @@ export async function pickRepository(current: string | null): Promise<string | n
     defaultPath: current ?? undefined,
   });
   return typeof selected === "string" ? selected : null;
+}
+
+/** 設定を読む。ファイルが無ければ既定値が返る。壊れていればエラー */
+export async function loadSettings(): Promise<Settings> {
+  return isTauri ? invokeTauri<Settings>("load_settings") : fetchDev<Settings>("load_settings");
+}
+
+/** 設定を書く。全体を渡して丸ごと置き換える */
+export async function saveSettings(settings: Settings): Promise<void> {
+  if (isTauri) {
+    await invokeTauri<void>("save_settings", { settings });
+    return;
+  }
+  await fetchDev<{ ok: boolean }>("save_settings", { json: JSON.stringify(settings) });
 }

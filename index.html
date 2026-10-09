@@ -1,10 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Git Graph</title>
+    <script>
+      // 前回解決したテーマを React より先に当てる。設定ファイルを読み終えるまでの
+      // 一瞬、既定の配色が出るのを防ぐ。キー名は src/theme.ts の THEME_CACHE_KEY と同じ
+      (function () {
+        try {
+          var cached = JSON.parse(localStorage.getItem("git-graph:theme-resolved") || "null");
+          if (!cached || !cached.attr) return;
+          var root = document.documentElement;
+          root.setAttribute("data-theme", cached.attr);
+          var vars = cached.vars || {};
+          for (var name in vars) root.style.setProperty(name, vars[name]);
+        } catch (e) {
+          // 読めなければ CSS の既定（OS 追従）のまま
+        }
+      })();
+    </script>
   </head>
 
   <body>

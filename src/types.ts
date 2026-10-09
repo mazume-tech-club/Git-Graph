@@ -124,3 +124,16 @@ export type RepoFingerprint = {
   head: string | null;
   worktrees: number;
 };
+
+export type ThemeMode = "light" | "dark" | "system" | "custom";
+
+export type ThemeSettings = {
+  mode: ThemeMode;
+  /** カスタムのときの基調色（`#rrggbb`） */
+  baseColor: string;
+};
+
+/** 設定ファイルの内容。Rust 側の `settings::Settings` と 1 対 1 */
+export type Settings = {
+  theme: ThemeSettings;
+};
