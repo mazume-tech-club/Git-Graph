@@ -338,5 +338,10 @@ git add latest.json; git commit -m "latest.json を v1.2.0 に更新"; git push 
 `latest.json` は main ブランチにある必要がある。手順 5 を忘れるとリリースはできても
 自動更新だけ動かない状態になる。
 
+ホストのビルドが `failed to read plugin permissions: ... permissions\ask.toml` で落ちるときは、
+`~/.cargo/registry/src` の展開済みソースが消えている（コンパイル済み成果物は残るので
+依存のビルド自体は進み、Tauri のビルドスクリプトだけが失敗する）。
+`cargo fetch --manifest-path src-tauri/Cargo.toml --locked` で取り直してからビルドする。
+
 MSI は現在ビルドできない。`bundle/msi/` の古いファイルがロックされており、
 上書き・削除がアクセス拒否になる。再起動して削除すれば復旧する見込み。
