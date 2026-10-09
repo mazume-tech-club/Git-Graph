@@ -97,6 +97,264 @@ body {
   cursor: default;
 }
 
+/* ---- タブの帯（ツールバー内） ---- */
+
+.tab-strip {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab-strip-item {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  max-width: 240px;
+  padding: 3px 6px 3px 10px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.tab-strip-item:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.tab-strip-item.active {
+  color: var(--fg);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.tab-strip-item.kind-home {
+  padding-right: 10px;
+}
+
+.tab-strip-item.kind-branch .tab-strip-label {
+  color: #a78bfa;
+}
+
+.tab-strip-item.kind-branch.active .tab-strip-label {
+  color: var(--fg);
+}
+
+.tab-strip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolbar .tab-strip-close {
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  border-radius: 4px;
+}
+
+.toolbar .tab-strip-close:hover {
+  color: var(--fg);
+  background: var(--bg-selected);
+}
+
+/* ---- タブの中身 ---- */
+
+.tab-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-pane[hidden] {
+  display: none;
+}
+
+.repo-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.repo-view .repo-info {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.repo-focus {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  color: #a78bfa;
+  border: 1px solid #a78bfa;
+  border-radius: 10px;
+}
+
+/* 行の右端の「タブで開く」。ホバーしたときだけ見せる */
+.row-open-tab {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--fg-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  opacity: 0;
+}
+
+.branch-row:hover .row-open-tab,
+.worktree-row:hover .row-open-tab,
+.row-open-tab:focus-visible {
+  opacity: 1;
+}
+
+.row-open-tab:hover {
+  color: var(--fg);
+  background: var(--bg-selected);
+}
+
+/* ---- ホーム ---- */
+
+.home {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.home .placeholder {
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.home .placeholder button,
+.home-header button,
+.home-remove {
+  padding: 4px 12px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.home .placeholder button:hover,
+.home-header button:hover,
+.home-remove:hover {
+  background: var(--bg-hover);
+}
+
+.home-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.home-header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.home-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-row {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.home-row-main {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.home-name {
+  padding: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.home-name:hover {
+  text-decoration: underline;
+}
+
+.home-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-remove {
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.home-row-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.home-row-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #e05561;
+}
+
+.home-stat {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.home-stat.working.on {
+  color: #31c48d;
+  border-color: #31c48d;
+}
+
+.home-stat.unmerged.on {
+  color: #f6a609;
+  border-color: #f6a609;
+}
+
 .repo-info {
   display: flex;
   align-items: center;

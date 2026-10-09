@@ -63,7 +63,14 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 |------|------|
 | `src-tauri/src/git.rs` | libgit2 でのリポジトリ読み取り。全ロジックとテストがここ |
 | `src-tauri/src/lib.rs` | Tauri コマンドの登録、トレイ、ウィンドウイベント |
+| `src-tauri/src/settings.rs` | 設定ファイルの読み書き |
 | `src/api.ts` | Tauri / ブラウザの呼び分け |
+| `src/App.tsx` | 外枠。タブと設定を持ち、中身は RepoView / Home に任せる |
+| `src/tabs.ts` | タブの型、同一判定、localStorage への控え |
+| `src/components/RepoView.tsx` | 1 ビュー分（グラフ・サイドバー・ポーリング） |
+| `src/components/Home.tsx` | 登録リポジトリの一覧と件数 |
+| `src/branchState.ts` | ブランチの主状態の判定 |
+| `src/theme.ts` | テーマの解決と適用 |
 | `src/graph/lanes.ts` | コミット列 → レーン配置 |
 | `src/components/GraphCell.tsx` | 1 コミット分のグラフを SVG で描画 |
 | `scripts/dev-git-api.mjs` | ブラウザプレビュー用の開発 API |
@@ -75,7 +82,8 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | コマンド | 引数 | 返り値 |
 |---------|------|--------|
 | `open_repository` | `path` | `RepoInfo` |
-| `list_commits` | `path`, `limit`(既定 500) | `CommitInfo[]` |
+| `repo_overview` | `path`, `mergeBase?` | `RepoOverview` |
+| `list_commits` | `path`, `limit`(既定 500), `start?` | `CommitInfo[]` |
 | `list_branches` | `path`, `mergeBase?` | `BranchInfo[]` |
 | `merge_base_info` | `path`, `preferred?` | `MergeBaseInfo` |
 | `merge_base_commit` | `path`, `a`, `b` | `String?` |
@@ -99,6 +107,30 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 
 全 ref（`refs/heads` / `refs/remotes` / `refs/tags` / HEAD）から到達できるコミットを
 `Sort::TOPOLOGICAL | Sort::TIME` で辿る。既定 500 件まで。
+`start` を渡すとそのブランチ（またはコミット）から辿れるものだけに絞る（ブランチビュー用）。
+
+### タブ・ホーム・登録リポジトリ
+
+用語は `GLOSSARY.md`、ウィンドウではなくタブにした理由は `docs/adr/0001`。
+
+- 1 ウィンドウ内のタブ。先頭は閉じられない**ホーム**。ほかは**ワークツリービュー**
+  （パスを開く。ワークツリーのパスならその HEAD と未コミット変更が基準）か
+  **ブランチビュー**（同じリポジトリで `start` を指定して絞る）のどちらか
+- タブごとに別のリポジトリでよい。**全タブをマウントしたまま `hidden` で切り替える**
+  （選択やスクロールを保つため）。ポーリングは `active` なタブだけ。隠れていた
+  タブは再表示時に指紋を見て、変わっていれば読み直す
+- 同じビューのタブは 2 つ作らない（`sameView`）。既存のタブを前に出す
+- タブは localStorage（`git-graph:tabs`）に控えて再起動時に復元する。開けなくなった
+  パスはビュー内にエラーが出るだけで、タブは閉じられる
+- **登録リポジトリ**は設定ファイルの `repositories[]`。ビューがリポジトリを開けたときに
+  `RepoInfo.mainPath`（メインワークツリー）で自動登録する。ワークツリーを開いても
+  登録されるのはメインワークツリー。ホームの「外す」で登録から消す（リポジトリには触れない）
+- ホームの件数は `repo_overview`（未マージ数・作業中数・ワークツリー数）。表示中だけ
+  60 秒ごとに数え直す。タブで開いているリポジトリの読み込み済みデータは流用していない
+  （数え直しが軽いため。重くなったら流用を検討）
+- 起動引数のパスはワークツリービューのタブとして開き、前に出す。復元したタブは残す。
+  v1.3 以前の「最後に開いたリポジトリ」（`git-graph:last-repo`）はタブの控えが無いときだけ
+  移行して消す
 
 ### レーン配置（`src/graph/lanes.ts`）
 

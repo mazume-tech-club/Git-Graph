@@ -62,12 +62,55 @@ export function repoInfo(path) {
     isEmpty = true; // コミットが 1 件も無い
   }
 
-  return { path: root, headBranch, headCommit, isDetached, isEmpty, remotes };
+  // メインワークツリー。--git-common-dir は <main>/.git を返す（ワークツリーから見ても同じ）
+  let mainPath = root;
+  try {
+    const common = git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim();
+    mainPath = common.replace(/[\\/]\.git$/, "") || root;
+  } catch {
+    // 古い git など。root のままにする
+  }
+
+  return { path: root, mainPath, headBranch, headCommit, isDetached, isEmpty, remotes };
 }
 
-export function listCommits(path, limit) {
+/** ホームに出すリポジトリの要約（Rust 側の repo_overview と同じ数え方） */
+export function repoOverview(path, mergeBase) {
+  const info = repoInfo(path);
+  const base = mergeBaseInfo(info.path, mergeBase);
+  const branches = listBranches(info.path, mergeBase);
+  const changes = listWorktreeChanges(info.path);
+  const dirty = new Map(changes.map((c) => [c.path, c.changes ?? 0]));
+
+  let unmerged = 0;
+  let working = 0;
+  for (const b of branches) {
+    if (b.kind === "remoteBranch" || b.isMergeBase) continue;
+    const isWorking = b.worktreePath ? (dirty.get(b.worktreePath) ?? 0) > 0 : false;
+    if (isWorking) working += 1;
+    else if (!b.merged) unmerged += 1;
+  }
+
+  return {
+    path: info.path,
+    mainPath: info.mainPath,
+    name: info.mainPath.split(/[\\/]/).filter(Boolean).pop() ?? info.mainPath,
+    headBranch: info.headBranch,
+    isDetached: info.isDetached,
+    mergeBase: base,
+    unmerged,
+    working,
+    worktrees: changes.length,
+  };
+}
+
+export function listCommits(path, limit, start) {
   const info = repoInfo(path);
   if (info.isEmpty) return [];
+  if (start) {
+    // 無いブランチは Rust 側と同じくエラーにする
+    git(info.path, ["rev-parse", "--verify", "--quiet", `${start}^{commit}`]);
+  }
 
   const format = [
     "%H", // id
@@ -83,7 +126,7 @@ export function listCommits(path, limit) {
 
   const raw = git(info.path, [
     "log",
-    "--all",
+    start ? start : "--all",
     "--topo-order",
     `--max-count=${limit}`,
     `--pretty=format:${format}${RECORD}`,
@@ -708,7 +751,13 @@ export function gitApiMiddleware(req, res, next) {
           listCommits(
             url.searchParams.get("path") ?? ".",
             Number(url.searchParams.get("limit") ?? 500),
+            url.searchParams.get("start"),
           ),
+        );
+      case "/__git/repo_overview":
+        return send(
+          200,
+          repoOverview(url.searchParams.get("path") ?? ".", url.searchParams.get("mergeBase")),
         );
       default:
         return send(404, { error: "not found" });
