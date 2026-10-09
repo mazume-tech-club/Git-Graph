@@ -15,6 +15,9 @@ use serde::Serialize;
 pub struct RepoInfo {
     /// `.git` の親ディレクトリ（ワークツリーのルート）
     pub path: String,
+    /// メインワークツリーのパス。`path` がリンクされたワークツリーのときだけ異なる。
+    /// 登録リポジトリの単位はこちら
+    pub main_path: String,
     /// HEAD が指すブランチ名。detached HEAD の場合は None
     pub head_branch: Option<String>,
     /// HEAD のコミット ID。空リポジトリの場合は None
@@ -143,6 +146,7 @@ pub fn repo_info(path: &str) -> Result<RepoInfo, String> {
     };
 
     Ok(RepoInfo {
+        main_path: main_workdir(&repo).unwrap_or_else(|| workdir.clone()),
         path: workdir,
         head_branch,
         head_commit,
@@ -227,7 +231,15 @@ fn collect_refs(repo: &Repository) -> HashMap<String, Vec<RefLabel>> {
 }
 
 /// 全ての ref から辿れるコミットを、トポロジ順（新しい順）で最大 `limit` 件返す。
-pub fn list_commits(path: &str, limit: usize) -> Result<Vec<CommitInfo>, String> {
+/// コミット履歴を新しい順に取得する。
+///
+/// `start` を指定すると、そのブランチ（またはコミット）から辿れるものだけに絞る
+/// （ブランチビュー用）。省略時は全 ref から辿る。
+pub fn list_commits(
+    path: &str,
+    limit: usize,
+    start: Option<&str>,
+) -> Result<Vec<CommitInfo>, String> {
     let repo = open(path)?;
     if repo.is_empty().unwrap_or(false) {
         return Ok(Vec::new());
@@ -239,12 +251,24 @@ pub fn list_commits(path: &str, limit: usize) -> Result<Vec<CommitInfo>, String>
     // TOPOLOGICAL だけだと親が子より上に来る場合があるため TIME と併用する
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
         .map_err(|e| e.message().to_string())?;
-    walk.push_glob("refs/heads/*")
-        .map_err(|e| e.message().to_string())?;
-    // リモート追跡ブランチやタグにしか無いコミットも拾う
-    let _ = walk.push_glob("refs/remotes/*");
-    let _ = walk.push_glob("refs/tags/*");
-    let _ = walk.push_head();
+    match start {
+        Some(spec) => {
+            let oid = repo
+                .revparse_single(spec)
+                .and_then(|o| o.peel_to_commit())
+                .map(|c| c.id())
+                .map_err(|e| format!("ブランチが見つかりません ({spec}): {}", e.message()))?;
+            walk.push(oid).map_err(|e| e.message().to_string())?;
+        }
+        None => {
+            walk.push_glob("refs/heads/*")
+                .map_err(|e| e.message().to_string())?;
+            // リモート追跡ブランチやタグにしか無いコミットも拾う
+            let _ = walk.push_glob("refs/remotes/*");
+            let _ = walk.push_glob("refs/tags/*");
+            let _ = walk.push_head();
+        }
+    }
 
     let mut commits = Vec::new();
     for oid in walk {
@@ -1101,6 +1125,79 @@ pub fn list_worktree_changes(path: &str) -> Result<Vec<WorktreeChanges>, String>
     Ok(list)
 }
 
+/// ホームに出すリポジトリ 1 件分の要約
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoOverview {
+    pub path: String,
+    pub main_path: String,
+    /// 表示名（メインワークツリーのディレクトリ名）
+    pub name: String,
+    pub head_branch: Option<String>,
+    pub is_detached: bool,
+    pub merge_base: MergeBaseInfo,
+    /// 未マージのローカルブランチ数（マージ基準自身は数えない）
+    pub unmerged: usize,
+    /// 作業中（ワークツリーで開いていて未コミット変更あり）のローカルブランチ数
+    pub working: usize,
+    /// ワークツリー数（メイン含む）
+    pub worktrees: usize,
+}
+
+/// ホーム用の要約。ブランチ一覧と全ワークツリーの変更件数から数える。
+/// 主状態の定義はフロントの `branchState.ts` と同じ（作業中 > 未マージ > マージ済み）。
+pub fn repo_overview(path: &str, merge_base: Option<&str>) -> Result<RepoOverview, String> {
+    let info = repo_info(path)?;
+    let repo = open(path)?;
+    let base = resolve_merge_base(&repo, merge_base);
+    let branches = list_branches(path, merge_base)?;
+    let changes = list_worktree_changes(path)?;
+    let dirty: HashMap<String, usize> = changes
+        .iter()
+        .map(|c| (normalize_path(&c.path), c.changes.unwrap_or(0)))
+        .collect();
+
+    let mut unmerged = 0;
+    let mut working = 0;
+    for b in branches.iter().filter(|b| b.kind != RefKind::RemoteBranch) {
+        if b.is_merge_base {
+            continue;
+        }
+        let is_working = b
+            .worktree_path
+            .as_deref()
+            .map(|p| dirty.get(&normalize_path(p)).copied().unwrap_or(0) > 0)
+            .unwrap_or(false);
+        if is_working {
+            working += 1;
+        } else if !b.merged {
+            unmerged += 1;
+        }
+    }
+
+    let name = std::path::Path::new(&info.main_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| info.main_path.clone());
+
+    Ok(RepoOverview {
+        path: info.path,
+        main_path: info.main_path,
+        name,
+        head_branch: info.head_branch,
+        is_detached: info.is_detached,
+        merge_base: base,
+        unmerged,
+        working,
+        worktrees: changes.len(),
+    })
+}
+
+/// パス比較用。区切り文字と末尾の区切り、大文字小文字の違いを吸収する
+fn normalize_path(path: &str) -> String {
+    path.replace('\\', "/").trim_end_matches('/').to_lowercase()
+}
+
 /// ブランチの説明を設定する。空文字や None のときは設定を消す。
 ///
 /// 書き込むのはリポジトリ配下の `.git/config` だけで、履歴には触れない。
@@ -1215,7 +1312,7 @@ mod tests {
         let info = repo_info(&path_of(&dir)).unwrap();
         assert!(info.is_empty);
         assert_eq!(info.head_commit, None);
-        assert!(list_commits(&path_of(&dir), 100).unwrap().is_empty());
+        assert!(list_commits(&path_of(&dir), 100, None).unwrap().is_empty());
     }
 
     #[test]
@@ -1229,7 +1326,7 @@ mod tests {
     #[test]
     fn list_commits_returns_children_before_parents() {
         let dir = fixture();
-        let commits = list_commits(&path_of(&dir), 100).unwrap();
+        let commits = list_commits(&path_of(&dir), 100, None).unwrap();
 
         assert_eq!(commits.len(), 5, "A/B/C/D/M の 5 件");
 
@@ -1253,7 +1350,7 @@ mod tests {
     #[test]
     fn list_commits_exposes_merge_parents_in_order() {
         let dir = fixture();
-        let commits = list_commits(&path_of(&dir), 100).unwrap();
+        let commits = list_commits(&path_of(&dir), 100, None).unwrap();
 
         let merge = &commits[0];
         assert_eq!(merge.summary, "M");
@@ -1269,7 +1366,7 @@ mod tests {
     #[test]
     fn list_commits_attaches_branch_and_tag_labels() {
         let dir = fixture();
-        let commits = list_commits(&path_of(&dir), 100).unwrap();
+        let commits = list_commits(&path_of(&dir), 100, None).unwrap();
         let by_summary: HashMap<&str, &CommitInfo> =
             commits.iter().map(|c| (c.summary.as_str(), c)).collect();
 
@@ -1296,14 +1393,14 @@ mod tests {
     #[test]
     fn list_commits_respects_limit() {
         let dir = fixture();
-        assert_eq!(list_commits(&path_of(&dir), 2).unwrap().len(), 2);
-        assert_eq!(list_commits(&path_of(&dir), 0).unwrap().len(), 0);
+        assert_eq!(list_commits(&path_of(&dir), 2, None).unwrap().len(), 2);
+        assert_eq!(list_commits(&path_of(&dir), 0, None).unwrap().len(), 0);
     }
 
     #[test]
     fn commit_metadata_round_trips() {
         let dir = fixture();
-        let commits = list_commits(&path_of(&dir), 100).unwrap();
+        let commits = list_commits(&path_of(&dir), 100, None).unwrap();
         let merge = &commits[0];
 
         assert_eq!(merge.author_name, "Tester");
@@ -1497,7 +1594,7 @@ mod tests {
 
     /// 新しい順のコミット一覧（0 番目が HEAD）
     fn commit_ids(dir: &TempDir) -> Vec<String> {
-        list_commits(&path_of(dir), 100)
+        list_commits(&path_of(dir), 100, None)
             .unwrap()
             .into_iter()
             .map(|c| c.id)
@@ -1685,6 +1782,66 @@ mod tests {
         let (dir, _outside) = fixture_with_worktree();
         assert_eq!(fingerprint(&path_of(&dir)).unwrap().worktrees, 1);
         assert_eq!(fingerprint(&path_of(&fixture())).unwrap().worktrees, 0);
+    }
+
+    #[test]
+    fn list_commits_can_start_from_one_branch() {
+        let (dir, _outside) = fixture_with_worktree();
+        let path = path_of(&dir);
+
+        // stale（U ← B ← A）から辿ると 3 件。main 側の C/D/M は含まない
+        let from_stale = list_commits(&path, 100, Some("stale")).unwrap();
+        let summaries: Vec<&str> = from_stale.iter().map(|c| c.summary.as_str()).collect();
+        assert_eq!(summaries, vec!["U", "B", "A"]);
+
+        // 全体では A/B/C/D/M/U の 6 件
+        assert_eq!(list_commits(&path, 100, None).unwrap().len(), 6);
+
+        // 無いブランチはエラー
+        assert!(list_commits(&path, 100, Some("no-such")).is_err());
+    }
+
+    #[test]
+    fn repo_info_reports_main_path_from_linked_worktree() {
+        let (dir, outside) = fixture_with_worktree();
+        let wt = outside.path().join("wt-feature");
+        let info = repo_info(&wt.to_string_lossy()).unwrap();
+        assert_ne!(
+            info.path, info.main_path,
+            "ワークツリーから開くと path と main_path は違う"
+        );
+        assert_eq!(
+            normalize_path(&info.main_path),
+            normalize_path(&path_of(&dir))
+        );
+        assert_eq!(info.head_branch.as_deref(), Some("feature"));
+
+        let main = repo_info(&path_of(&dir)).unwrap();
+        assert_eq!(main.path, main.main_path);
+    }
+
+    #[test]
+    fn repo_overview_counts_states() {
+        let (dir, outside) = fixture_with_worktree();
+        let path = path_of(&dir);
+
+        // 汚す前: stale が未マージ 1、作業中 0
+        let clean = repo_overview(&path, None).unwrap();
+        assert_eq!(clean.merge_base.name.as_deref(), Some("main"));
+        assert_eq!((clean.unmerged, clean.working, clean.worktrees), (1, 0, 2));
+        assert_eq!(clean.head_branch.as_deref(), Some("main"));
+        assert!(!clean.name.is_empty());
+
+        // feature のワークツリーを汚すと作業中 1（feature はマージ済みだが作業中が優先）
+        std::fs::write(outside.path().join("wt-feature/new.txt"), "x").unwrap();
+        let dirty = repo_overview(&path, None).unwrap();
+        assert_eq!((dirty.unmerged, dirty.working), (1, 1));
+
+        // 基準を stale にすると main が未マージ側に回る
+        let other = repo_overview(&path, Some("stale")).unwrap();
+        assert_eq!(other.merge_base.name.as_deref(), Some("stale"));
+        assert_eq!(other.unmerged, 1, "main が未マージ、feature は作業中");
+        assert_eq!(other.working, 1);
     }
 
     #[test]

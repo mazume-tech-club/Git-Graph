@@ -6,6 +6,7 @@ import type {
   MergeBaseInfo,
   RepoFingerprint,
   RepoInfo,
+  RepoOverview,
   Settings,
   WorktreeChanges,
   WorktreeInfo,
@@ -48,10 +49,25 @@ export async function openRepository(path: string): Promise<RepoInfo> {
     : fetchDev<RepoInfo>("open_repository", { path });
 }
 
-export async function listCommits(path: string, limit: number): Promise<Commit[]> {
+/** コミット履歴。`start` を指定するとそのブランチから辿れるものだけ（ブランチビュー用） */
+export async function listCommits(
+  path: string,
+  limit: number,
+  start: string | null = null,
+): Promise<Commit[]> {
   return isTauri
-    ? invokeTauri<Commit[]>("list_commits", { path, limit })
-    : fetchDev<Commit[]>("list_commits", { path, limit: String(limit) });
+    ? invokeTauri<Commit[]>("list_commits", { path, limit, start })
+    : fetchDev<Commit[]>("list_commits", optional({ path, limit: String(limit), start }));
+}
+
+/** ホームに出すリポジトリの要約。`mergeBase` は設定で指定された基準の名前 */
+export async function repoOverview(
+  path: string,
+  mergeBase: string | null,
+): Promise<RepoOverview> {
+  return isTauri
+    ? invokeTauri<RepoOverview>("repo_overview", { path, mergeBase })
+    : fetchDev<RepoOverview>("repo_overview", optional({ path, mergeBase }));
 }
 
 /**

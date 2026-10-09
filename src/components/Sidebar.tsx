@@ -28,6 +28,10 @@ type Props = {
   onChangeMergeBase: (name: string | null) => void;
   onSetCompareBase: (commitId: string | null) => void;
   onEditDescription: (branch: string, description: string | null) => void;
+  /** ブランチビューを新しいタブで開く */
+  onOpenBranchTab: (branch: string) => void;
+  /** ワークツリービューを新しいタブで開く */
+  onOpenWorktreeTab: (path: string) => void;
 };
 
 const TABS: { id: SidebarTab; label: string }[] = [
@@ -54,6 +58,8 @@ export function Sidebar({
   onChangeMergeBase,
   onSetCompareBase,
   onEditDescription,
+  onOpenBranchTab,
+  onOpenWorktreeTab,
 }: Props) {
   const count = (id: SidebarTab) =>
     id === "branches" ? branches.length : id === "worktrees" ? worktrees.length : null;
@@ -86,10 +92,16 @@ export function Sidebar({
             onSelect={onSelectBranch}
             onChangeMergeBase={onChangeMergeBase}
             onEditDescription={onEditDescription}
+            onOpenTab={onOpenBranchTab}
           />
         )}
         {tab === "worktrees" && (
-          <WorktreeList worktrees={worktrees} dirty={dirty} onSelect={onSelectCommit} />
+          <WorktreeList
+            worktrees={worktrees}
+            dirty={dirty}
+            onSelect={onSelectCommit}
+            onOpenTab={onOpenWorktreeTab}
+          />
         )}
         {tab === "detail" && worktreeSelected && (
           <div className="detail">

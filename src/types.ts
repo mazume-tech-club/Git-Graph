@@ -23,6 +23,8 @@ export type Commit = {
 
 export type RepoInfo = {
   path: string;
+  /** メインワークツリーのパス。ワークツリーから開いたときだけ path と異なる。登録の単位 */
+  mainPath: string;
   headBranch: string | null;
   headCommit: string | null;
   isDetached: boolean;
@@ -167,4 +169,21 @@ export type RepositorySettings = {
   path: string;
   /** マージ基準のローカルブランチ名。null なら自動検出 */
   mergeBase: string | null;
+};
+
+/** ホームに出すリポジトリ 1 件分の要約 */
+export type RepoOverview = {
+  path: string;
+  mainPath: string;
+  /** 表示名（メインワークツリーのディレクトリ名） */
+  name: string;
+  headBranch: string | null;
+  isDetached: boolean;
+  mergeBase: MergeBaseInfo;
+  /** 未マージのローカルブランチ数（マージ基準自身は数えない） */
+  unmerged: number;
+  /** 作業中（ワークツリーで開いていて未コミット変更あり）のローカルブランチ数 */
+  working: number;
+  /** ワークツリー数（メイン含む） */
+  worktrees: number;
 };

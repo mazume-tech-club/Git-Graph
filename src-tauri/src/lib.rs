@@ -7,7 +7,7 @@ use tauri::{Manager, WindowEvent};
 
 use git::{
     BranchInfo, CommitInfo, DiffSummary, FileDiff, MergeBaseInfo, RepoFingerprint, RepoInfo,
-    WorktreeChanges, WorktreeInfo,
+    RepoOverview, WorktreeChanges, WorktreeInfo,
 };
 use settings::Settings;
 
@@ -17,10 +17,20 @@ fn open_repository(path: String) -> Result<RepoInfo, String> {
     git::repo_info(&path)
 }
 
-/// コミット履歴を新しい順に取得する。
+/// コミット履歴を新しい順に取得する。`start` を指定するとそのブランチから辿れるものだけ。
 #[tauri::command]
-fn list_commits(path: String, limit: Option<usize>) -> Result<Vec<CommitInfo>, String> {
-    git::list_commits(&path, limit.unwrap_or(500))
+fn list_commits(
+    path: String,
+    limit: Option<usize>,
+    start: Option<String>,
+) -> Result<Vec<CommitInfo>, String> {
+    git::list_commits(&path, limit.unwrap_or(500), start.as_deref())
+}
+
+/// ホームに出すリポジトリの要約（未マージ数、作業中数など）。
+#[tauri::command]
+fn repo_overview(path: String, merge_base: Option<String>) -> Result<RepoOverview, String> {
+    git::repo_overview(&path, merge_base.as_deref())
 }
 
 /// ブランチ一覧。マージ基準に取り込み済みかどうかも含めて返す。
@@ -148,6 +158,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             open_repository,
+            repo_overview,
             list_commits,
             list_branches,
             merge_base_info,

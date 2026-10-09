@@ -15,6 +15,8 @@ type Props = {
   onChangeMergeBase: (name: string | null) => void;
   /** メモを保存する。null を渡すと設定を消す */
   onEditDescription: (branch: string, description: string | null) => void;
+  /** ブランチビューを新しいタブで開く */
+  onOpenTab: (branch: string) => void;
 };
 
 /**
@@ -29,6 +31,7 @@ export function BranchList({
   onSelect,
   onChangeMergeBase,
   onEditDescription,
+  onOpenTab,
 }: Props) {
   const [query, setQuery] = useState("");
   const [localOnly, setLocalOnly] = useState(true);
@@ -131,6 +134,18 @@ export function BranchList({
           <span className={isStale(b.lastCommitTime) ? "age stale" : "age"}>
             {formatAge(b.lastCommitTime)}
           </span>
+          <button
+            type="button"
+            className="row-open-tab"
+            title="このブランチから辿れるコミットだけをタブで開く"
+            aria-label="タブで開く"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenTab(b.name);
+            }}
+          >
+            ⧉
+          </button>
         </span>
 
         <span className="branch-note-line">
