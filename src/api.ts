@@ -119,6 +119,16 @@ export async function repoFingerprint(path: string): Promise<RepoFingerprint> {
     : fetchDev<RepoFingerprint>("repo_fingerprint", { path });
 }
 
+/**
+ * 作業ツリーで変更されているファイルの数（未追跡を含む）。
+ * 差分の中身は計算しないので、定期的に呼んでも軽い。
+ */
+export async function worktreeChangeCount(path: string): Promise<number> {
+  return isTauri
+    ? invokeTauri<number>("worktree_change_count", { path })
+    : fetchDev<number>("worktree_change_count", { path });
+}
+
 /** null のクエリパラメータは送らない（Rust 側の Option に合わせる） */
 function optional(params: Record<string, string | null>): Record<string, string> {
   return Object.fromEntries(

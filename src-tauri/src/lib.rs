@@ -70,6 +70,12 @@ fn repo_fingerprint(path: String) -> Result<RepoFingerprint, String> {
     git::fingerprint(&path)
 }
 
+/// 作業ツリーで変更されているファイルの数。差分の中身は計算しないので軽い。
+#[tauri::command]
+fn worktree_change_count(path: String) -> Result<usize, String> {
+    git::worktree_change_count(&path)
+}
+
 /// 起動時引数で渡されたリポジトリのパス（`git-graph <path>`）。
 /// 指定が無い、またはディレクトリでない場合は None。
 #[tauri::command]
@@ -105,6 +111,7 @@ pub fn run() {
             diff_summary,
             file_diff,
             repo_fingerprint,
+            worktree_change_count,
             set_branch_description,
             startup_repository
         ])
