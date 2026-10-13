@@ -11,7 +11,9 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const REPO_URL = "http://git.example.com/example-org/Git-Graph";
-const BUNDLE_DIR = "src-tauri/target/release/bundle/nsis";
+/** CARGO_TARGET_DIR を設定している環境ではビルド成果物がそちらに出る */
+const TARGET_DIR = process.env.CARGO_TARGET_DIR || "src-tauri/target";
+const BUNDLE_DIR = join(TARGET_DIR, "release/bundle/nsis");
 /** Tauri が Windows x64 のターゲットとして使う名前 */
 const TARGET = "windows-x86_64";
 

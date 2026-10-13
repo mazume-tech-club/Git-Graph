@@ -340,6 +340,9 @@ node scripts/make-latest-json.mjs 1.2.0 <本文>
 git add latest.json; git commit -m "latest.json を v1.2.0 に更新"; git push gitea main
 ```
 
+`CARGO_TARGET_DIR` を設定している環境では成果物が `<CARGO_TARGET_DIR>/release/bundle/nsis` に出る。
+手順 4 の資産パスはそちらを指す。手順 5 のスクリプトは環境変数を見て読み分ける。
+
 `latest.json` は main ブランチにある必要がある。手順 5 を忘れるとリリースはできても
 自動更新だけ動かない状態になる。
 
