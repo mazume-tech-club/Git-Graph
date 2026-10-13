@@ -382,9 +382,13 @@ body {
   flex: 0 0 auto;
 }
 
-/* 設定ボタンはツールバーの右端 */
-.toolbar .settings-button {
+/* ヘルプと設定のボタンはツールバーの右端 */
+.toolbar .help-button {
   margin-left: auto;
+}
+
+.toolbar .help-button,
+.toolbar .settings-button {
   padding: 4px 8px;
   font-size: 15px;
   line-height: 1;
@@ -405,6 +409,15 @@ dialog.settings {
 
 dialog.settings::backdrop {
   background: rgba(0, 0, 0, 0.4);
+}
+
+/* ヘルプは使い方の説明が入るので少し広い */
+dialog.settings.help {
+  max-width: 560px;
+}
+
+.settings-group + .settings-group {
+  margin-top: 12px;
 }
 
 .settings-body {
@@ -1423,4 +1436,99 @@ dialog.settings::backdrop {
   color: var(--fg-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- ヘルプダイアログ ---- */
+
+.help-version {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.help-app-name {
+  font-weight: 600;
+}
+
+.help-update {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.help-update button,
+.help-links button {
+  padding: 3px 10px;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.help-update button:hover:not(:disabled),
+.help-links button:hover {
+  background: var(--bg-hover);
+}
+
+.help-update button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.help-update-status {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+/* 更新内容（latest.json の notes）。長いときはスクロール */
+.help-notes {
+  max-height: 160px;
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  overflow: auto;
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.help-links {
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+.help-links button.link {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  border: none;
+  text-decoration: underline;
+}
+
+.help-usage {
+  margin: 0;
+}
+
+.help-usage-row {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.help-usage dt {
+  font-weight: 500;
+}
+
+.help-usage dd {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
 }

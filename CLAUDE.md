@@ -69,6 +69,8 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | `src/tabs.ts` | タブの型、同一判定、localStorage への控え |
 | `src/components/RepoView.tsx` | 1 ビュー分（グラフ・サイドバー・ポーリング） |
 | `src/components/Home.tsx` | 登録リポジトリの一覧と件数 |
+| `src/components/HelpDialog.tsx` | ヘルプ。バージョン情報、手動の更新確認、使い方の要点 |
+| `src/update.ts` | 自動更新の確認・適用、実行中のバージョン取得 |
 | `src/branchState.ts` | ブランチの主状態の判定 |
 | `src/theme.ts` | テーマの解決と適用 |
 | `src/graph/lanes.ts` | コミット列 → レーン配置 |
@@ -288,6 +290,9 @@ v1.2.x 以前は既定の `currentUser`（`%LOCALAPPDATA%\Git Graph`）に入っ
   失うと以降の更新を配信できなくなるのでバックアップすること
 - 起動時に確認し、見つかったら通知バナーを出す。適用は利用者が押したときだけ。
   作業中に勝手に再起動させないため
+- ツールバー右端の ? （ヘルプ）からも手動で確認できる。バージョン表示は Tauri では
+  `getVersion()`（実行ファイルの版）、ブラウザプレビューでは Vite の `define` で埋めた
+  `package.json` の版（`__APP_VERSION__`）
 - 更新サーバに届かない場合は黙って無視する（使えなくなる方が困るため）
 - **`dangerousInsecureTransportProtocol` を有効にしている。** Gitea が HTTP のため。
   この指定が無いと updater は起動時に panic する（ビルドは通るので気付きにくい）。

@@ -5,6 +5,31 @@
  */
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/** 更新の確認・適用ができる環境か（Tauri の WebView かどうか） */
+export function canUpdate(): boolean {
+  return isTauri;
+}
+
+/**
+ * 実行中のアプリのバージョン。Tauri では実行ファイルの版（tauri.conf.json）、
+ * ブラウザプレビューでは package.json の版（Vite が埋め込む）
+ */
+export async function appVersion(): Promise<string> {
+  if (!isTauri) return __APP_VERSION__;
+  const { getVersion } = await import("@tauri-apps/api/app");
+  return getVersion();
+}
+
+/** 外部の URL を既定のブラウザで開く */
+export async function openExternal(url: string): Promise<void> {
+  if (!isTauri) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}
+
 export type UpdateInfo = {
   version: string;
   notes: string | null;

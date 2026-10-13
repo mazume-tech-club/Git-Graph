@@ -4,6 +4,7 @@ import { loadSettings, pickRepository, saveSettings, startupRepository } from ".
 import { normalizePath } from "./branchState";
 import { Home } from "./components/Home";
 import { RepoView } from "./components/RepoView";
+import { HelpDialog } from "./components/HelpDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { TabBar } from "./components/TabBar";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -46,6 +47,7 @@ function App() {
   const [{ tabs, activeId }, setTabState] = useState(loadStoredTabs);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const saveTimer = useRef<number | null>(null);
@@ -186,6 +188,15 @@ function App() {
         <TabBar tabs={tabs} activeId={activeId} onActivate={activate} onClose={closeTab} />
         <button
           type="button"
+          className="help-button"
+          title="ヘルプ（バージョン情報・更新）"
+          aria-label="ヘルプ"
+          onClick={() => setHelpOpen(true)}
+        >
+          ?
+        </button>
+        <button
+          type="button"
           className="settings-button"
           title="設定"
           aria-label="設定"
@@ -201,6 +212,8 @@ function App() {
         onChangeTheme={changeTheme}
         onClose={() => setSettingsOpen(false)}
       />
+
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       <UpdateBanner />
 

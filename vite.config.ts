@@ -4,10 +4,16 @@ import react from "@vitejs/plugin-react";
 import { gitApiMiddleware } from "./scripts/dev-git-api.mjs";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
+import pkg from "./package.json";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
+  // ブラウザプレビューでヘルプに出すバージョン。Tauri では実行ファイルの版を使う
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
+
   plugins: [
     react(),
     {
