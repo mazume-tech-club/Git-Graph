@@ -408,11 +408,32 @@ node scripts/make-latest-json.mjs 1.2.0 <本文>
 git add latest.json; git commit -m "latest.json を v1.2.0 に更新"; git push gitea main
 ```
 
+```bash
+# 6. GitHub へ社内の値を取り除いた履歴を送る（Git Bash で。後述）
+bash scripts/publish-github.sh
+```
+
 `CARGO_TARGET_DIR` を設定している環境では成果物が `<CARGO_TARGET_DIR>/release/bundle/nsis` に出る。
 手順 4 の資産パスはそちらを指す。手順 5 のスクリプトは環境変数を見て読み分ける。
 
 `latest.json` は main ブランチにある必要がある。手順 5 を忘れるとリリースはできても
 自動更新だけ動かない状態になる。
+
+### GitHub への公開
+
+GitHub（`origin`）は public。社内の値を含む Gitea の履歴をそのまま送ってはいけないので、
+`scripts/publish-github.sh` が Gitea の main を一時フォルダへ複製し、`git filter-repo` で
+全履歴の社内の値を置き換え、`latest.json` を取り除き、作成者メールを noreply に差し替えて送る。
+
+- 置き換えの対応表は `~/.config/git-graph-publish/`（`replacements.txt` / `mailmap` /
+  `forbidden.txt`）。社内の値そのものなのでリポジトリには入れない
+- 送る前に全履歴（本文・メッセージ・作成者・タグ）を `forbidden.txt` の語で探し、
+  1 件でも見つかれば送らない
+- 置き換え方が同じなら毎回同じコミットになるので、通常は早送りで送れる。対応表を
+  変えたときだけ `--force` が要る。`--dry-run` で作って検査するだけもできる
+- **`git push origin` は使えないようにしてある**（`remote.origin.pushurl` を無効な値にした）。
+  ローカルの main は社内の値を含む履歴なので、そのまま送ると公開されてしまう
+- コミットメッセージにも社内の値を書かない（置き換えはされるが、書かないのが原則）
 
 ホストのビルドが `failed to read plugin permissions: ... permissions\ask.toml` で落ちるときは、
 `~/.cargo/registry/src` の展開済みソースが消えている（コンパイル済み成果物は残るので
