@@ -817,12 +817,12 @@ fn build_diff<'a>(
     repo: &'a Repository,
     from: Option<&str>,
     to: Option<&str>,
-    pathspec: Option<&str>,
+    pathspec: &[&str],
     context_lines: u32,
 ) -> Result<(Diff<'a>, bool), String> {
     let mut opts = DiffOptions::new();
     opts.context_lines(context_lines);
-    if let Some(spec) = pathspec {
+    for spec in pathspec {
         opts.pathspec(spec);
     }
 
@@ -883,7 +883,7 @@ pub fn diff_summary(
     to: Option<&str>,
 ) -> Result<DiffSummary, String> {
     let repo = open(path)?;
-    let (diff, against_first_parent) = build_diff(&repo, from, to, None, CONTEXT_LINES)?;
+    let (diff, against_first_parent) = build_diff(&repo, from, to, &[], CONTEXT_LINES)?;
 
     let mut files = Vec::new();
     let mut insertions = 0;
@@ -933,11 +933,15 @@ pub fn diff_summary(
 /// 1 ファイル分の差分をハンク単位で返す。
 ///
 /// `full_file` のときは変更の無い行も含めたファイル全体を 1 つのハンクとして返す。
+///
+/// 改名・複製されたファイルは `old_file` に元のパスを渡す。絞り込みが新しいパスだけだと
+/// 元のパスが差分に入らず改名を検出できないため、全行が追加として出てしまう。
 pub fn file_diff(
     path: &str,
     from: Option<&str>,
     to: Option<&str>,
     file: &str,
+    old_file: Option<&str>,
     full_file: bool,
 ) -> Result<FileDiff, String> {
     let repo = open(path)?;
@@ -946,7 +950,9 @@ pub fn file_diff(
     } else {
         CONTEXT_LINES
     };
-    let (diff, _) = build_diff(&repo, from, to, Some(file), context)?;
+    let mut pathspec = vec![file];
+    pathspec.extend(old_file);
+    let (diff, _) = build_diff(&repo, from, to, &pathspec, context)?;
 
     let mut hunks = Vec::new();
     let mut is_binary = false;
@@ -1724,7 +1730,7 @@ mod tests {
     fn file_diff_returns_hunks_with_line_numbers() {
         let dir = file_fixture();
         let ids = commit_ids(&dir);
-        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "a.txt", false).unwrap();
+        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "a.txt", None, false).unwrap();
 
         assert!(!diff.is_binary);
         assert!(!diff.truncated);
@@ -1770,11 +1776,45 @@ mod tests {
     fn file_diff_returns_nothing_for_unrelated_file() {
         let dir = file_fixture();
         let ids = commit_ids(&dir);
-        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "b.txt", false).unwrap();
+        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "b.txt", None, false).unwrap();
         assert_eq!(diff.hunks.len(), 1, "b.txt 自身の差分は取れる");
 
-        let none = file_diff(&path_of(&dir), None, Some(&ids[1]), "missing.txt", false).unwrap();
+        let none = file_diff(
+            &path_of(&dir),
+            None,
+            Some(&ids[1]),
+            "missing.txt",
+            None,
+            false,
+        )
+        .unwrap();
         assert!(none.hunks.is_empty());
+    }
+
+    #[test]
+    fn file_diff_follows_rename_with_old_path() {
+        let dir = file_fixture();
+        let ids = commit_ids(&dir);
+        // ids[0] は a.txt を内容そのままで c.txt にリネームしたコミット
+
+        // 元のパスを渡さないと改名を検出できず、全行が追加になる
+        let alone = file_diff(&path_of(&dir), None, Some(&ids[0]), "c.txt", None, false).unwrap();
+        assert!(alone.hunks[0]
+            .lines
+            .iter()
+            .all(|l| matches!(l.kind, LineKind::Addition)));
+
+        // 元のパスを渡せば改名として扱い、内容の差分は無い
+        let renamed = file_diff(
+            &path_of(&dir),
+            None,
+            Some(&ids[0]),
+            "c.txt",
+            Some("a.txt"),
+            false,
+        )
+        .unwrap();
+        assert!(renamed.hunks.is_empty(), "{:?}", renamed.hunks);
     }
 
     /// 1 行目から `count` 行目までの行を並べた内容。`changed` 行目だけ書き換える
@@ -1807,12 +1847,13 @@ mod tests {
         let dir = long_file_fixture(20);
         let ids = commit_ids(&dir);
 
-        let partial = file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", false).unwrap();
+        let partial =
+            file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", None, false).unwrap();
         assert_eq!(partial.hunks.len(), 1);
         // 変更 1 行の置き換え（削除 + 追加）と前後 3 行ずつ
         assert_eq!(partial.hunks[0].lines.len(), 8);
 
-        let full = file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", true).unwrap();
+        let full = file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", None, true).unwrap();
         assert_eq!(full.hunks.len(), 1);
         assert!(!full.truncated);
         // 20 行 + 置き換えで増えた 1 行
@@ -1826,7 +1867,7 @@ mod tests {
         let dir = long_file_fixture(MAX_DIFF_LINES + 500);
         let ids = commit_ids(&dir);
 
-        let full = file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", true).unwrap();
+        let full = file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", None, true).unwrap();
         assert!(full.truncated);
         // ハンクごと捨てずに、上限の行数までは返す
         assert_eq!(full.hunks.len(), 1);

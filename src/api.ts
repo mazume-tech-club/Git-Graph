@@ -131,6 +131,7 @@ export async function diffSummary(
 
 /**
  * 1 ファイル分の差分。範囲の指定方法は diffSummary と同じ。
+ * 改名・複製されたファイルは `oldFile` に元のパスを渡す（渡さないと全行が追加になる）。
  * `fullFile` を立てると変更の無い行も含めたファイル全体を 1 つのハンクで返す。
  */
 export async function fileDiff(
@@ -138,13 +139,14 @@ export async function fileDiff(
   from: string | null,
   to: string | null,
   file: string,
+  oldFile: string | null = null,
   fullFile = false,
 ): Promise<FileDiff> {
   return isTauri
-    ? invokeTauri<FileDiff>("file_diff", { path, from, to, file, fullFile })
+    ? invokeTauri<FileDiff>("file_diff", { path, from, to, file, oldFile, fullFile })
     : fetchDev<FileDiff>(
         "file_diff",
-        optional({ path, from, to, file, fullFile: fullFile ? "true" : null }),
+        optional({ path, from, to, file, oldFile, fullFile: fullFile ? "true" : null }),
       );
 }
 

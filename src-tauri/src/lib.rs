@@ -79,12 +79,14 @@ fn diff_summary(
 
 /// 1 ファイル分の差分。範囲の指定方法は diff_summary と同じ。
 /// `full_file` を立てると変更の無い行も含めたファイル全体を返す。
+/// 改名・複製されたファイルは `old_file` に元のパスを渡す。
 #[tauri::command]
 fn file_diff(
     path: String,
     from: Option<String>,
     to: Option<String>,
     file: String,
+    old_file: Option<String>,
     full_file: Option<bool>,
 ) -> Result<FileDiff, String> {
     git::file_diff(
@@ -92,6 +94,7 @@ fn file_diff(
         from.as_deref(),
         to.as_deref(),
         &file,
+        old_file.as_deref(),
         full_file.unwrap_or(false),
     )
 }

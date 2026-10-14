@@ -511,7 +511,7 @@ const MAX_DIFF_LINES = 4000;
 /** 「ファイル全体を表示」のときの前後の行数（Rust 側の FULL_FILE_CONTEXT_LINES と同じ） */
 const FULL_FILE_CONTEXT = "--unified=1000000";
 
-function runPatch(repo, from, to, file, extra = []) {
+function runPatch(repo, from, to, files, extra = []) {
   const args = [
     "diff",
     "--patch",
@@ -520,7 +520,7 @@ function runPatch(repo, from, to, file, extra = []) {
     ...extra,
     ...diffRange(repo, from, to),
   ];
-  if (file) args.push("--", file);
+  if (files.length > 0) args.push("--", ...files);
   return git(repo, args);
 }
 
@@ -536,7 +536,7 @@ export function diffSummary(path, from, to) {
     return { files: [], insertions: 0, deletions: 0, againstFirstParent: false };
   }
 
-  const files = parsePatch(runPatch(info.path, from, to, null)).map((f) => ({
+  const files = parsePatch(runPatch(info.path, from, to, [])).map((f) => ({
     path: f.path,
     oldPath: f.status === "renamed" || f.status === "copied" ? f.oldPath : null,
     status: f.status,
@@ -566,10 +566,12 @@ export function diffSummary(path, from, to) {
   };
 }
 
-export function fileDiff(path, from, to, file, fullFile = false) {
+export function fileDiff(path, from, to, file, oldFile = null, fullFile = false) {
   const info = repoInfo(path);
   const extra = fullFile ? [FULL_FILE_CONTEXT] : [];
-  let parsed = parsePatch(runPatch(info.path, from, to, file, extra));
+  // 改名は元のパスも絞り込みに含めないと検出されない（Rust 側と同じ）
+  const files = oldFile ? [file, oldFile] : [file];
+  let parsed = parsePatch(runPatch(info.path, from, to, files, extra));
 
   // 未追跡ファイルは git diff に出てこないので、空との比較で取り直す
   if (parsed.length === 0 && !to && untrackedFiles(info.path).includes(file)) {
@@ -731,6 +733,7 @@ export function gitApiMiddleware(req, res, next) {
             url.searchParams.get("from"),
             url.searchParams.get("to"),
             url.searchParams.get("file") ?? "",
+            url.searchParams.get("oldFile"),
             url.searchParams.get("fullFile") === "true",
           ),
         );

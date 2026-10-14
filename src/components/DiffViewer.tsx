@@ -81,18 +81,19 @@ export function DiffViewer({
   }, [file]);
 
   const inSummary = change !== null;
+  const oldPath = change?.oldPath ?? null;
   useEffect(() => {
     setDiff(null);
     setError(null);
     if (!inSummary) return;
     let cancelled = false;
-    fileDiff(repoPath, from, to, file, fullFile)
+    fileDiff(repoPath, from, to, file, oldPath, fullFile)
       .then((d) => !cancelled && setDiff(d))
       .catch((e) => !cancelled && setError(String(e)));
     return () => {
       cancelled = true;
     };
-  }, [repoPath, from, to, file, fullFile, inSummary]);
+  }, [repoPath, from, to, file, oldPath, fullFile, inSummary]);
 
   // 作業ツリーの差分は編集で中身が変わるので、開いている 1 ファイル分だけ取り直す。
   // 表示中の内容を消さずに差し替えるので、スクロール位置はそのまま残る
@@ -101,7 +102,7 @@ export function DiffViewer({
     let stopped = false;
     const id = window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
-      void fileDiff(repoPath, from, null, file, fullFile)
+      void fileDiff(repoPath, from, null, file, oldPath, fullFile)
         .then((d) => !stopped && setDiff(d))
         .catch(() => undefined);
     }, POLL_INTERVAL_MS);
@@ -109,7 +110,7 @@ export function DiffViewer({
       stopped = true;
       window.clearInterval(id);
     };
-  }, [repoPath, from, to, file, fullFile, active, inSummary]);
+  }, [repoPath, from, to, file, oldPath, fullFile, active, inSummary]);
 
   const prevFile = index > 0 ? files[index - 1] : index < 0 ? files[files.length - 1] : null;
   const nextFile = index < 0 ? files[0] : (files[index + 1] ?? null);
@@ -248,6 +249,7 @@ export function DiffViewer({
         file={file}
         label={comparisonLabel(comparison)}
         inSummary={inSummary}
+        renamed={oldPath !== null}
         diff={diff}
         error={error}
         mode={mode}
@@ -263,6 +265,8 @@ type BodyProps = {
   file: string;
   label: string;
   inSummary: boolean;
+  /** 改名・複製か。内容に差が無いときの文言を変える */
+  renamed: boolean;
   diff: FileDiff | null;
   error: string | null;
   mode: Mode;
@@ -275,6 +279,7 @@ function ViewerBody({
   file,
   label,
   inSummary,
+  renamed,
   diff,
   error,
   mode,
@@ -290,7 +295,13 @@ function ViewerBody({
   if (diff.isBinary) {
     return <p className="viewer-note">バイナリファイルのため差分は表示できません。</p>;
   }
-  if (diff.hunks.length === 0) return <p className="viewer-note">内容の差分はありません。</p>;
+  if (diff.hunks.length === 0) {
+    return (
+      <p className="viewer-note">
+        {renamed ? "パスが変わっただけで、内容の差分はありません。" : "内容の差分はありません。"}
+      </p>
+    );
+  }
 
   const truncated = diff.truncated && (
     <p className="viewer-note">差分が大きいため途中までを表示しています。</p>

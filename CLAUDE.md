@@ -95,7 +95,7 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | `list_worktrees` | `path` | `WorktreeInfo[]` |
 | `list_worktree_changes` | `path` | `WorktreeChanges[]` |
 | `diff_summary` | `path`, `from?`, `to?` | `DiffSummary` |
-| `file_diff` | `path`, `from?`, `to?`, `file`, `fullFile?` | `FileDiff` |
+| `file_diff` | `path`, `from?`, `to?`, `file`, `oldFile?`, `fullFile?` | `FileDiff` |
 | `set_branch_description` | `path`, `branch`, `description?` | `()` |
 | `repo_fingerprint` | `path` | `RepoFingerprint` |
 | `worktree_change_count` | `path` | `usize` |
@@ -184,6 +184,8 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | 両方指定 | 任意の 2 コミット間 |
 
 - マージコミットは第一親と比較し、`againstFirstParent` を立てて UI に注記する
+- `file_diff` で改名・複製されたファイルを見るときは `oldFile` に元のパスを渡す。
+  絞り込み（pathspec）が新しいパスだけだと元のパスが差分に入らず、全行が追加になる
 - ルートコミットは空ツリーとの比較になる
 - バイナリは行数を数えず `isBinary` を立てる
 - 1 ファイル 4000 行（`MAX_DIFF_LINES`）で打ち切り `truncated` を返す。ハンクの途中でも
