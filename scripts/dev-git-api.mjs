@@ -506,8 +506,20 @@ function parsePatch(text) {
   return files.filter((f) => f.path !== "");
 }
 
-function runPatch(repo, from, to, file) {
-  const args = ["diff", "--patch", "--find-renames", "--no-color", ...diffRange(repo, from, to)];
+/** Rust 側の MAX_DIFF_LINES と同じ。1 ファイルあたりに返す差分行数の上限 */
+const MAX_DIFF_LINES = 4000;
+/** 「ファイル全体を表示」のときの前後の行数（Rust 側の FULL_FILE_CONTEXT_LINES と同じ） */
+const FULL_FILE_CONTEXT = "--unified=1000000";
+
+function runPatch(repo, from, to, file, extra = []) {
+  const args = [
+    "diff",
+    "--patch",
+    "--find-renames",
+    "--no-color",
+    ...extra,
+    ...diffRange(repo, from, to),
+  ];
   if (file) args.push("--", file);
   return git(repo, args);
 }
@@ -554,14 +566,15 @@ export function diffSummary(path, from, to) {
   };
 }
 
-export function fileDiff(path, from, to, file) {
+export function fileDiff(path, from, to, file, fullFile = false) {
   const info = repoInfo(path);
-  let parsed = parsePatch(runPatch(info.path, from, to, file));
+  const extra = fullFile ? [FULL_FILE_CONTEXT] : [];
+  let parsed = parsePatch(runPatch(info.path, from, to, file, extra));
 
   // 未追跡ファイルは git diff に出てこないので、空との比較で取り直す
   if (parsed.length === 0 && !to && untrackedFiles(info.path).includes(file)) {
     try {
-      git(info.path, ["diff", "--no-index", "--patch", "--no-color", "/dev/null", file]);
+      git(info.path, ["diff", "--no-index", "--patch", "--no-color", ...extra, "/dev/null", file]);
     } catch (e) {
       // --no-index は差分があると終了コード 1 を返すので、出力だけ拾う
       parsed = parsePatch(String(e.stdout ?? ""));
@@ -569,10 +582,25 @@ export function fileDiff(path, from, to, file) {
   }
 
   const target = parsed.find((f) => f.path === file || f.oldPath === file);
+
+  // Rust 側と同じく、上限を超えたらハンクの途中で打ち切る
+  const hunks = [];
+  let budget = MAX_DIFF_LINES;
+  let truncated = false;
+  for (const hunk of target?.hunks ?? []) {
+    if (hunk.lines.length > budget) {
+      truncated = true;
+      if (budget > 0) hunks.push({ ...hunk, lines: hunk.lines.slice(0, budget) });
+      break;
+    }
+    budget -= hunk.lines.length;
+    hunks.push(hunk);
+  }
+
   return {
-    hunks: target?.hunks ?? [],
+    hunks,
     isBinary: target?.isBinary ?? false,
-    truncated: false,
+    truncated,
   };
 }
 
@@ -703,6 +731,7 @@ export function gitApiMiddleware(req, res, next) {
             url.searchParams.get("from"),
             url.searchParams.get("to"),
             url.searchParams.get("file") ?? "",
+            url.searchParams.get("fullFile") === "true",
           ),
         );
       case "/__git/set_branch_description":

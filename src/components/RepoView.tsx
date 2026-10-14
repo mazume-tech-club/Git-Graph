@@ -25,18 +25,30 @@ import type {
   WorktreeInfo,
 } from "../types";
 import { CommitList, type CommitListHandle } from "./CommitList";
+import type { DiffComparison, DiffViewerLink } from "./DiffPane";
+import { DiffViewer } from "./DiffViewer";
 import { Sidebar, type SidebarTab } from "./Sidebar";
 
 const COMMIT_LIMIT = 500;
 const SIDEBAR_WIDTH_KEY = "git-graph:sidebar-width";
 const SIDEBAR_MIN = 260;
 const SIDEBAR_MAX = 720;
+const VIEWER_HEIGHT_KEY = "git-graph:diff-viewer-height";
+const VIEWER_MIN = 120;
+/** 差分ビューアを広げても、グラフにはこれだけの高さを残す */
+const GRAPH_MIN = 120;
 /** ref の変化を見に行く間隔 */
 const REFRESH_INTERVAL_MS = 5_000;
 /** 未コミットの変更を数え直す間隔。ref より重いので間隔を広くとる */
 const WORKTREE_INTERVAL_MS = 15_000;
 /** 全ワークツリーの未コミット変更を数え直す間隔。主状態「作業中」の鮮度 */
 const DIRTY_INTERVAL_MS = 30_000;
+
+function readStoredViewerHeight(): number {
+  const raw = Number(localStorage.getItem(VIEWER_HEIGHT_KEY));
+  if (!Number.isFinite(raw) || raw <= 0) return 320;
+  return Math.max(VIEWER_MIN, raw);
+}
 
 function readStoredWidth(): number {
   const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
@@ -91,9 +103,15 @@ export function RepoView({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(readStoredWidth);
+  /** 差分ビューアで開いているファイル。閉じていれば null */
+  const [viewerFile, setViewerFile] = useState<string | null>(null);
+  /** サイドバーの変更ファイル一覧が最後に読み込んだ比較。差分ビューアはこれを表示する */
+  const [comparison, setComparison] = useState<DiffComparison | null>(null);
+  const [viewerHeight, setViewerHeight] = useState(readStoredViewerHeight);
   /** 最後にリポジトリの変化を確認できた時刻。ポーリングが生きていることの目印 */
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const contentRef = useRef<HTMLElement>(null);
+  const graphColumnRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<CommitListHandle>(null);
   // 読み込み処理から最新のマージ基準設定を参照するための控え
   const preferredRef = useRef(preferredMergeBase);
@@ -143,6 +161,8 @@ export function RepoView({
           setSelectedBranchName(focusBranch);
           setWorktreeSelected(false);
           setCompareBase(null);
+          setViewerFile(null);
+          setComparison(null);
           onOpenedRef.current(info);
         }
       } catch (e) {
@@ -289,6 +309,34 @@ export function RepoView({
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
   }, [sidebarWidth]);
 
+  // 差分ビューアの高さをドラッグで変える
+  const startViewerResize = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const column = graphColumnRef.current;
+    if (!column) return;
+    const onMove = (ev: PointerEvent) => {
+      const rect = column.getBoundingClientRect();
+      const max = Math.max(VIEWER_MIN, rect.height - GRAPH_MIN);
+      setViewerHeight(Math.min(max, Math.max(VIEWER_MIN, rect.bottom - ev.clientY)));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(VIEWER_HEIGHT_KEY, String(viewerHeight));
+  }, [viewerHeight]);
+
+  const viewerLink = useMemo<DiffViewerLink>(
+    () => ({ openFile: viewerFile, onOpenFile: setViewerFile, onComparison: setComparison }),
+    [viewerFile],
+  );
+  const closeViewer = useCallback(() => setViewerFile(null), []);
+
   const repoPath = repo?.path ?? null;
   /** ポーリングしてよいか。隠れたタブや隠れたウィンドウでは止める */
   const canPoll = () => active && document.visibilityState !== "hidden";
@@ -418,15 +466,36 @@ export function RepoView({
 
       {repo && commits.length > 0 && (
         <main className="content" ref={contentRef}>
-          <CommitList
-            ref={listRef}
-            graph={graph}
-            selectedId={worktreeSelected ? null : selectedId}
-            onSelect={selectCommit}
-            worktreeChanges={worktreeChanges}
-            worktreeSelected={worktreeSelected}
-            onSelectWorktree={selectWorktree}
-          />
+          <div className="graph-column" ref={graphColumnRef}>
+            <CommitList
+              ref={listRef}
+              graph={graph}
+              selectedId={worktreeSelected ? null : selectedId}
+              onSelect={selectCommit}
+              worktreeChanges={worktreeChanges}
+              worktreeSelected={worktreeSelected}
+              onSelectWorktree={selectWorktree}
+            />
+            {viewerFile !== null && comparison && (
+              <>
+                <div
+                  className="splitter-h"
+                  role="separator"
+                  aria-orientation="horizontal"
+                  onPointerDown={startViewerResize}
+                />
+                <DiffViewer
+                  repoPath={repo.path}
+                  comparison={comparison}
+                  file={viewerFile}
+                  height={viewerHeight}
+                  active={active}
+                  onSelectFile={setViewerFile}
+                  onClose={closeViewer}
+                />
+              </>
+            )}
+          </div>
           <div
             className="splitter"
             role="separator"
@@ -446,6 +515,7 @@ export function RepoView({
               repoPath={repo.path}
               compareBase={compareBase}
               worktreeSelected={worktreeSelected}
+              viewer={viewerLink}
               onSelectCommit={revealCommit}
               onSelectParent={revealCommit}
               onSelectBranch={selectBranch}

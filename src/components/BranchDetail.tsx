@@ -3,12 +3,13 @@ import { useEffect, useState } from "react";
 import { mergeBaseCommit } from "../api";
 import { formatAge } from "../format";
 import type { BranchInfo, MergeBaseInfo } from "../types";
-import { DiffPane } from "./DiffPane";
+import { DiffPane, type DiffViewerLink } from "./DiffPane";
 
 type Props = {
   branch: BranchInfo;
   mergeBase: MergeBaseInfo | null;
   repoPath: string;
+  viewer: DiffViewerLink;
   /** グラフ側でそのコミットを選ぶ */
   onSelectCommit: (id: string) => void;
 };
@@ -17,7 +18,7 @@ type Props = {
  * ブランチの変更内容。マージ基準との共通祖先からブランチ先端までの差分を出し、
  * メモが無くても「このブランチで何を作っていたか」が掴めるようにする。
  */
-export function BranchDetail({ branch, mergeBase, repoPath, onSelectCommit }: Props) {
+export function BranchDetail({ branch, mergeBase, repoPath, viewer, onSelectCommit }: Props) {
   const baseCommit = mergeBase?.commit ?? null;
   // 共通祖先。null は未取得、"" は履歴がつながっていない
   const [ancestor, setAncestor] = useState<string | null>(null);
@@ -136,7 +137,7 @@ export function BranchDetail({ branch, mergeBase, repoPath, onSelectCommit }: Pr
       ) : ancestor ? (
         <>
           <h3 className="detail-section">基準に無い変更（共通祖先からの差分）</h3>
-          <DiffPane repoPath={repoPath} from={ancestor} to={branch.target} />
+          <DiffPane repoPath={repoPath} from={ancestor} to={branch.target} viewer={viewer} />
         </>
       ) : null}
     </div>

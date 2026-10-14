@@ -1,4 +1,4 @@
-import { DiffPane } from "./DiffPane";
+import { DiffPane, type DiffViewerLink } from "./DiffPane";
 import { formatCommitDate, formatOffset } from "../format";
 import type { Commit } from "../types";
 import { RefBadge } from "./RefBadge";
@@ -8,6 +8,7 @@ type Props = {
   repoPath: string;
   /** 比較の基準に固定したコミット */
   compareBase: string | null;
+  viewer: DiffViewerLink;
   onSelectParent: (id: string) => void;
   onSetCompareBase: (id: string | null) => void;
 };
@@ -16,6 +17,7 @@ export function CommitDetail({
   commit,
   repoPath,
   compareBase,
+  viewer,
   onSelectParent,
   onSetCompareBase,
 }: Props) {
@@ -90,7 +92,12 @@ export function CommitDetail({
         )}
       </div>
 
-      <DiffPane repoPath={repoPath} from={comparing ? compareBase : null} to={commit.id} />
+      <DiffPane
+        repoPath={repoPath}
+        from={comparing ? compareBase : null}
+        to={commit.id}
+        viewer={viewer}
+      />
     </div>
   );
 }

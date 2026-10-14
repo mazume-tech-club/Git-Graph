@@ -69,6 +69,9 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | `src/tabs.ts` | タブの型、同一判定、localStorage への控え |
 | `src/components/RepoView.tsx` | 1 ビュー分（グラフ・サイドバー・ポーリング） |
 | `src/components/Home.tsx` | 登録リポジトリの一覧と件数 |
+| `src/components/DiffPane.tsx` | 詳細タブの変更ファイル一覧。選んだファイルを差分ビューアへ渡す |
+| `src/components/DiffViewer.tsx` | 差分ビューア（グラフの下に開く 1 ファイル分の差分） |
+| `src/diffRows.ts` | 差分の行を左右に並べる組み立てと、変更箇所の先頭の判定 |
 | `src/components/HelpDialog.tsx` | ヘルプ。バージョン情報、手動の更新確認、使い方の要点 |
 | `src/update.ts` | 自動更新の確認・適用、実行中のバージョン取得 |
 | `src/branchState.ts` | ブランチの主状態の判定 |
@@ -92,7 +95,7 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | `list_worktrees` | `path` | `WorktreeInfo[]` |
 | `list_worktree_changes` | `path` | `WorktreeChanges[]` |
 | `diff_summary` | `path`, `from?`, `to?` | `DiffSummary` |
-| `file_diff` | `path`, `from?`, `to?`, `file` | `FileDiff` |
+| `file_diff` | `path`, `from?`, `to?`, `file`, `fullFile?` | `FileDiff` |
 | `set_branch_description` | `path`, `branch`, `description?` | `()` |
 | `repo_fingerprint` | `path` | `RepoFingerprint` |
 | `worktree_change_count` | `path` | `usize` |
@@ -183,8 +186,32 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 - マージコミットは第一親と比較し、`againstFirstParent` を立てて UI に注記する
 - ルートコミットは空ツリーとの比較になる
 - バイナリは行数を数えず `isBinary` を立てる
-- 1 ファイル 4000 行（`MAX_DIFF_LINES`）で打ち切り `truncated` を返す
+- 1 ファイル 4000 行（`MAX_DIFF_LINES`）で打ち切り `truncated` を返す。ハンクの途中でも
+  上限までは返す（全体表示ではハンクが 1 つなので、ハンクごと捨てると何も出なくなる）
+- `fullFile` は前後の行数を `FULL_FILE_CONTEXT_LINES`（100 万）にしてファイル全体を
+  1 ハンクで返す。libgit2 内部の long は Windows で 32 ビットなので `u32::MAX` は使えない
 - 差分行の末尾は改行だけを落とす。行末の空白自体に意味があるため `trim_end` は使わない
+
+### 差分ビューア
+
+用語は `GLOSSARY.md`。GitLens のように差分を広く見るための領域で、v2.2.0 で入れた。
+
+- グラフの列（`.graph-column`）を上下に分け、下に開く。高さは localStorage
+  （`git-graph:diff-viewer-height`）。タブにしなかったのはグラフを見ながら追えるようにするため
+- 詳細タブの変更ファイル一覧（`DiffPane`）でファイルを押すと開く。一覧は読み込んだ比較
+  （`from` / `to` と一覧）を `onComparison` で RepoView に渡し、ビューアはそれを表示する。
+  グラフで別のコミットを選ぶと一覧が読み直され、**同じパス**のファイルの差分に切り替わる。
+  一覧に無ければ「変更されていません」と出す（改名は追わない。ファイル履歴の役目）
+- 表示形式（`git-graph:diff-mode`）と折り返し（`git-graph:diff-wrap`）は localStorage。
+  「ファイル全体」は覚えない
+- 左右に並べて折り返さないときは左右を別々のスクロール領域にし、スクロール位置を連動させる。
+  こちらから動かして起きたスクロールイベントは打ち返さない（狭い側に位置を戻されるため）
+- キー操作はビューアにフォーカスがあるときだけ（`[` `]` `n` `p` `Esc`）。ファイルを開くと
+  ビューアにフォーカスを移す
+- 作業ツリーの差分を開いているときだけ、15 秒ごとに開いている 1 ファイル分を取り直す。
+  中身を差し替えるだけなのでスクロール位置は残る
+- v2.3.0 でハイライト（highlight.js）と行内の強調を入れる予定。ハイライトは `fullFile` で
+  全文を取って色付けしてから切り出す
 
 ### 自動更新
 

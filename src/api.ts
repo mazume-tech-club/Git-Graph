@@ -129,16 +129,23 @@ export async function diffSummary(
     : fetchDev<DiffSummary>("diff_summary", optional({ path, from, to }));
 }
 
-/** 1 ファイル分の差分。範囲の指定方法は diffSummary と同じ。 */
+/**
+ * 1 ファイル分の差分。範囲の指定方法は diffSummary と同じ。
+ * `fullFile` を立てると変更の無い行も含めたファイル全体を 1 つのハンクで返す。
+ */
 export async function fileDiff(
   path: string,
   from: string | null,
   to: string | null,
   file: string,
+  fullFile = false,
 ): Promise<FileDiff> {
   return isTauri
-    ? invokeTauri<FileDiff>("file_diff", { path, from, to, file })
-    : fetchDev<FileDiff>("file_diff", optional({ path, from, to, file }));
+    ? invokeTauri<FileDiff>("file_diff", { path, from, to, file, fullFile })
+    : fetchDev<FileDiff>(
+        "file_diff",
+        optional({ path, from, to, file, fullFile: fullFile ? "true" : null }),
+      );
 }
 
 /**

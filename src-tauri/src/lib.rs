@@ -78,14 +78,22 @@ fn diff_summary(
 }
 
 /// 1 ファイル分の差分。範囲の指定方法は diff_summary と同じ。
+/// `full_file` を立てると変更の無い行も含めたファイル全体を返す。
 #[tauri::command]
 fn file_diff(
     path: String,
     from: Option<String>,
     to: Option<String>,
     file: String,
+    full_file: Option<bool>,
 ) -> Result<FileDiff, String> {
-    git::file_diff(&path, from.as_deref(), to.as_deref(), &file)
+    git::file_diff(
+        &path,
+        from.as_deref(),
+        to.as_deref(),
+        &file,
+        full_file.unwrap_or(false),
+    )
 }
 
 /// ブランチの説明を設定する。空文字を渡すと設定を消す。

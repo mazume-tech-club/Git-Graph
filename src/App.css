@@ -13,6 +13,9 @@
   --fg: #e6e8ee;
   --fg-muted: #9aa1b1;
   --accent: #4c8dff;
+  /* 差分の追加・削除の背景。意味を持つ色なので全テーマで同じにする */
+  --diff-add-bg: rgb(49 196 141 / 12%);
+  --diff-del-bg: rgb(224 85 97 / 12%);
 
   font-family: "Segoe UI", "Yu Gothic UI", system-ui, sans-serif;
   font-size: 13px;
@@ -1270,16 +1273,184 @@ dialog.settings.help {
   color: var(--fg-muted);
 }
 
-/* 差分本体。行は折り返さず横スクロールさせる */
-.diff-body {
-  margin-top: 8px;
-  overflow-x: auto;
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.5;
+/* ---- 差分ビューア ---- */
+
+.graph-column {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.graph-column .commit-list {
+  min-height: 0;
+}
+
+/* 上下にドラッグして差分ビューアの高さを変える */
+.splitter-h {
+  flex: 0 0 5px;
+  cursor: row-resize;
+  background: transparent;
+  border-top: 1px solid var(--border);
+}
+
+.splitter-h:hover,
+.splitter-h:active {
+  background: var(--accent);
+}
+
+.diff-viewer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  /* ウィンドウを縮めてもグラフが見えなくならないように */
+  max-height: calc(100% - 120px);
   background: var(--bg);
+  outline: none;
+}
+
+.viewer-bar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 4px 8px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.viewer-path {
+  min-width: 0;
+  overflow: hidden;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-range {
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.viewer-spacer {
+  flex: 1 1 auto;
+}
+
+.viewer-group {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.viewer-group button,
+.viewer-close {
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+  background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
+}
+
+.viewer-group button:hover:not(:disabled),
+.viewer-close:hover {
+  background: var(--bg-hover);
+}
+
+.viewer-group button:disabled {
+  color: var(--fg-muted);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.viewer-group button.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.viewer-index {
+  min-width: 48px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.viewer-check {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* 幅が足りずに折り返したときも右端に置く */
+.viewer-close {
+  margin-left: auto;
+  border-color: transparent;
+}
+
+.viewer-note {
+  margin: 0;
+  padding: 12px;
+  color: var(--fg-muted);
+}
+
+.viewer-note.error {
+  color: #ffb4b4;
+}
+
+/* 差分の本体。折り返さないときは横スクロールさせる */
+.viewer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 一番長い行に幅を揃え、追加・削除の背景が行末まで伸びるようにする */
+.viewer-lines {
+  width: max-content;
+  min-width: 100%;
+}
+
+.viewer-body.wrap .viewer-lines {
+  width: 100%;
+}
+
+.viewer-split {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 左右の高さを揃えるため、どちらも常に横スクロールバーを出す */
+.split-side {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: scroll;
+}
+
+.split-side + .split-side {
+  border-left: 1px solid var(--border);
+}
+
+.split-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.split-row > .diff-line + .diff-line {
+  border-left: 1px solid var(--border);
 }
 
 .hunk-header {
@@ -1290,19 +1461,45 @@ dialog.settings.help {
 
 .diff-line {
   display: flex;
+  min-height: 1.5em;
   white-space: pre;
 }
 
 .diff-line.addition {
-  background: rgb(49 196 141 / 12%);
+  background: var(--diff-add-bg);
 }
 
 .diff-line.deletion {
-  background: rgb(224 85 97 / 12%);
+  background: var(--diff-del-bg);
+}
+
+.diff-line.empty {
+  background: var(--bg-elevated);
+}
+
+/* 横にスクロールしても行番号は左端に残す。背景は行の色を不透明にして重ねる */
+.diff-line .gutter {
+  position: sticky;
+  left: 0;
+  display: flex;
+  flex: 0 0 auto;
+  background: var(--bg);
+}
+
+.diff-line.addition .gutter {
+  background: linear-gradient(var(--diff-add-bg), var(--diff-add-bg)), var(--bg);
+}
+
+.diff-line.deletion .gutter {
+  background: linear-gradient(var(--diff-del-bg), var(--diff-del-bg)), var(--bg);
+}
+
+.diff-line.empty .gutter {
+  background: var(--bg-elevated);
 }
 
 .diff-line .lineno {
-  flex: 0 0 38px;
+  width: 44px;
   padding-right: 6px;
   color: var(--fg-muted);
   text-align: right;
@@ -1310,7 +1507,7 @@ dialog.settings.help {
 }
 
 .diff-line .sign {
-  flex: 0 0 12px;
+  width: 14px;
   text-align: center;
   user-select: none;
 }
@@ -1326,6 +1523,13 @@ dialog.settings.help {
 .diff-line .code {
   flex: 1 0 auto;
   padding-right: 8px;
+}
+
+.viewer-body.wrap .diff-line .code {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .repo-updated {

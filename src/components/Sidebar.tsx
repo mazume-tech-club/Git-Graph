@@ -1,6 +1,6 @@
 import { BranchDetail } from "./BranchDetail";
 import { BranchList } from "./BranchList";
-import { DiffPane } from "./DiffPane";
+import { DiffPane, type DiffViewerLink } from "./DiffPane";
 import { CommitDetail } from "./CommitDetail";
 import { WorktreeList } from "./WorktreeList";
 import type { BranchInfo, Commit, MergeBaseInfo, WorktreeInfo } from "../types";
@@ -22,6 +22,8 @@ type Props = {
   compareBase: string | null;
   /** コミットではなく作業ツリーの変更を選んでいるか */
   worktreeSelected: boolean;
+  /** 変更ファイル一覧と差分ビューアのつなぎ */
+  viewer: DiffViewerLink;
   onSelectCommit: (commitId: string) => void;
   onSelectParent: (commitId: string) => void;
   onSelectBranch: (branch: BranchInfo) => void;
@@ -52,6 +54,7 @@ export function Sidebar({
   repoPath,
   compareBase,
   worktreeSelected,
+  viewer,
   onSelectCommit,
   onSelectParent,
   onSelectBranch,
@@ -106,7 +109,7 @@ export function Sidebar({
         {tab === "detail" && worktreeSelected && (
           <div className="detail">
             <h2 className="detail-summary">作業ツリーの変更</h2>
-            <DiffPane repoPath={repoPath} from={null} to={null} />
+            <DiffPane repoPath={repoPath} from={null} to={null} viewer={viewer} />
           </div>
         )}
         {tab === "detail" && !worktreeSelected && selectedBranch && (
@@ -114,6 +117,7 @@ export function Sidebar({
             branch={selectedBranch}
             mergeBase={mergeBase}
             repoPath={repoPath}
+            viewer={viewer}
             onSelectCommit={onSelectCommit}
           />
         )}
@@ -122,6 +126,7 @@ export function Sidebar({
             commit={commit}
             repoPath={repoPath}
             compareBase={compareBase}
+            viewer={viewer}
             onSelectParent={onSelectParent}
             onSetCompareBase={onSetCompareBase}
           />

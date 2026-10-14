@@ -790,6 +790,13 @@ pub struct FileDiff {
 /// 1 ファイルあたりに返す差分行数の上限。巨大なファイルで UI が固まるのを防ぐ
 const MAX_DIFF_LINES: usize = 4000;
 
+/// 変更箇所の前後に付ける行数
+const CONTEXT_LINES: u32 = 3;
+
+/// 「ファイル全体を表示」のときの前後の行数。全行が 1 つのハンクに収まるよう十分大きくする。
+/// libgit2 内部では long（Windows では 32 ビット）に入るので u32::MAX は使えない
+const FULL_FILE_CONTEXT_LINES: u32 = 1_000_000;
+
 fn tree_of<'a>(repo: &'a Repository, rev: &str) -> Result<Tree<'a>, String> {
     let oid = Oid::from_str(rev).map_err(|e| format!("コミット ID が不正です: {}", e.message()))?;
     repo.find_commit(oid)
@@ -811,9 +818,10 @@ fn build_diff<'a>(
     from: Option<&str>,
     to: Option<&str>,
     pathspec: Option<&str>,
+    context_lines: u32,
 ) -> Result<(Diff<'a>, bool), String> {
     let mut opts = DiffOptions::new();
-    opts.context_lines(3);
+    opts.context_lines(context_lines);
     if let Some(spec) = pathspec {
         opts.pathspec(spec);
     }
@@ -875,7 +883,7 @@ pub fn diff_summary(
     to: Option<&str>,
 ) -> Result<DiffSummary, String> {
     let repo = open(path)?;
-    let (diff, against_first_parent) = build_diff(&repo, from, to, None)?;
+    let (diff, against_first_parent) = build_diff(&repo, from, to, None, CONTEXT_LINES)?;
 
     let mut files = Vec::new();
     let mut insertions = 0;
@@ -923,14 +931,22 @@ pub fn diff_summary(
 }
 
 /// 1 ファイル分の差分をハンク単位で返す。
+///
+/// `full_file` のときは変更の無い行も含めたファイル全体を 1 つのハンクとして返す。
 pub fn file_diff(
     path: &str,
     from: Option<&str>,
     to: Option<&str>,
     file: &str,
+    full_file: bool,
 ) -> Result<FileDiff, String> {
     let repo = open(path)?;
-    let (diff, _) = build_diff(&repo, from, to, Some(file))?;
+    let context = if full_file {
+        FULL_FILE_CONTEXT_LINES
+    } else {
+        CONTEXT_LINES
+    };
+    let (diff, _) = build_diff(&repo, from, to, Some(file), context)?;
 
     let mut hunks = Vec::new();
     let mut is_binary = false;
@@ -958,8 +974,10 @@ pub fn file_diff(
             let Ok((hunk, _)) = patch.hunk(h) else {
                 continue;
             };
-            let count = patch.num_lines_in_hunk(h).unwrap_or(0);
-            if count > line_budget {
+            let total = patch.num_lines_in_hunk(h).unwrap_or(0);
+            // 全体表示ではハンクが 1 つになるので、ハンクごと捨てずに上限までは返す
+            let count = total.min(line_budget);
+            if count == 0 && total > 0 {
                 truncated = true;
                 break;
             }
@@ -986,6 +1004,10 @@ pub fn file_diff(
                 header: strip_eol(&String::from_utf8_lossy(hunk.header())),
                 lines,
             });
+            if count < total {
+                truncated = true;
+                break;
+            }
         }
     }
 
@@ -1702,7 +1724,7 @@ mod tests {
     fn file_diff_returns_hunks_with_line_numbers() {
         let dir = file_fixture();
         let ids = commit_ids(&dir);
-        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "a.txt").unwrap();
+        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "a.txt", false).unwrap();
 
         assert!(!diff.is_binary);
         assert!(!diff.truncated);
@@ -1748,11 +1770,67 @@ mod tests {
     fn file_diff_returns_nothing_for_unrelated_file() {
         let dir = file_fixture();
         let ids = commit_ids(&dir);
-        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "b.txt").unwrap();
+        let diff = file_diff(&path_of(&dir), None, Some(&ids[1]), "b.txt", false).unwrap();
         assert_eq!(diff.hunks.len(), 1, "b.txt 自身の差分は取れる");
 
-        let none = file_diff(&path_of(&dir), None, Some(&ids[1]), "missing.txt").unwrap();
+        let none = file_diff(&path_of(&dir), None, Some(&ids[1]), "missing.txt", false).unwrap();
         assert!(none.hunks.is_empty());
+    }
+
+    /// 1 行目から `count` 行目までの行を並べた内容。`changed` 行目だけ書き換える
+    fn numbered_lines(count: usize, changed: Option<usize>) -> String {
+        (1..=count)
+            .map(|i| {
+                if Some(i) == changed {
+                    format!("CHANGED{i}\n")
+                } else {
+                    format!("line{i}\n")
+                }
+            })
+            .collect()
+    }
+
+    fn long_file_fixture(count: usize) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        let mut init = RepositoryInitOptions::new();
+        init.initial_head("main");
+        let repo = Repository::init_opts(dir.path(), &init).unwrap();
+        let original = numbered_lines(count, None);
+        let changed = numbered_lines(count, Some(count / 2));
+        write_and_commit(&repo, &[("long.txt", Some(&original))], "追加", 1_000);
+        write_and_commit(&repo, &[("long.txt", Some(&changed))], "変更", 2_000);
+        dir
+    }
+
+    #[test]
+    fn file_diff_full_file_includes_every_line() {
+        let dir = long_file_fixture(20);
+        let ids = commit_ids(&dir);
+
+        let partial = file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", false).unwrap();
+        assert_eq!(partial.hunks.len(), 1);
+        // 変更 1 行の置き換え（削除 + 追加）と前後 3 行ずつ
+        assert_eq!(partial.hunks[0].lines.len(), 8);
+
+        let full = file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", true).unwrap();
+        assert_eq!(full.hunks.len(), 1);
+        assert!(!full.truncated);
+        // 20 行 + 置き換えで増えた 1 行
+        assert_eq!(full.hunks[0].lines.len(), 21);
+        assert_eq!(full.hunks[0].lines[0].content, "line1");
+        assert_eq!(full.hunks[0].lines[20].content, "line20");
+    }
+
+    #[test]
+    fn file_diff_truncates_inside_a_hunk() {
+        let dir = long_file_fixture(MAX_DIFF_LINES + 500);
+        let ids = commit_ids(&dir);
+
+        let full = file_diff(&path_of(&dir), None, Some(&ids[0]), "long.txt", true).unwrap();
+        assert!(full.truncated);
+        // ハンクごと捨てずに、上限の行数までは返す
+        assert_eq!(full.hunks.len(), 1);
+        assert_eq!(full.hunks[0].lines.len(), MAX_DIFF_LINES);
     }
 
     #[test]
