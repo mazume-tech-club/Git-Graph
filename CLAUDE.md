@@ -25,6 +25,7 @@ docker compose run --rm dev npm run rust:clippy   # lint（-D warnings）
 docker compose run --rm dev npm run rust:fmt      # 書式チェック
 docker compose run --rm dev npm run rust:test     # Rust テスト
 docker compose run --rm dev npm run check:lanes   # レーン配置の不変条件検査
+docker compose run --rm dev npm run check:diff    # 差分表示（左右の組・行内の強調・ハイライト）の検査
 ```
 
 **Windows 用 exe だけはホストでビルドする**（コンテナは Linux のため）。
@@ -71,7 +72,8 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 | `src/components/Home.tsx` | 登録リポジトリの一覧と件数 |
 | `src/components/DiffPane.tsx` | 詳細タブの変更ファイル一覧。選んだファイルを差分ビューアへ渡す |
 | `src/components/DiffViewer.tsx` | 差分ビューア（グラフの下に開く 1 ファイル分の差分） |
-| `src/diffRows.ts` | 差分の行を左右に並べる組み立てと、変更箇所の先頭の判定 |
+| `src/diffRows.ts` | 差分の行を左右に並べる組み立て、変更箇所の先頭の判定、行内の強調範囲 |
+| `src/highlight.ts` | シンタックスハイライト（highlight.js）と、結果の行ごとの部品への分割 |
 | `src/components/HelpDialog.tsx` | ヘルプ。バージョン情報、手動の更新確認、使い方の要点 |
 | `src/update.ts` | 自動更新の確認・適用、実行中のバージョン取得 |
 | `src/branchState.ts` | ブランチの主状態の判定 |
@@ -212,8 +214,16 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
   ビューアにフォーカスを移す
 - 作業ツリーの差分を開いているときだけ、15 秒ごとに開いている 1 ファイル分を取り直す。
   中身を差し替えるだけなのでスクロール位置は残る
-- v2.3.0 でハイライト（highlight.js）と行内の強調を入れる予定。ハイライトは `fullFile` で
-  全文を取って色付けしてから切り出す
+- **シンタックスハイライト**（v2.3.0）は highlight.js。配布サイズのため言語は
+  `src/highlight.ts` で登録したものだけで、拡張子だけで決める（自動判定はしない）。
+  断片に色を付けるとブロックコメントの途中などで崩れるので、`fullFile` で全文を取り、
+  変更前・変更後のファイルを組み立てて色付けしてから行番号で引く。全体表示でなければ
+  別に 1 回取る。上限（4000 行）で打ち切ったファイルには付けない
+- ハイライトの結果は HTML として流し込まない。span の入れ子を行ごとの部品（Segment）に
+  分け、React の要素として描く。行内の強調と重ねるためでもある
+- **行内の強調**は変更箇所の中で上から順に削除行と追加行を組にし（左右表示と同じ組み方）、
+  単語単位の最長共通部分列で変わった範囲を出す。漢字・かなは 1 文字ずつ比べる。
+  変わらなかった文字が 25% を切る行（ほぼ書き換え）と、長すぎる行は強調しない
 
 ### 自動更新
 
@@ -279,8 +289,11 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 - 解決した結果を localStorage（`git-graph:theme-resolved`）に控え、`index.html` の
   先頭スクリプトが React より先に当てる。設定ファイルを待つ間のちらつき防止。
   キー名を変えるときは両方直す
-- レーン色やバッジ色（緑・赤・橙・紫）はテーマで変えない。意味を持つ色なので
-  全テーマで同じにしてある
+- レーン色やバッジ色（緑・赤・橙・紫）、差分の追加・削除の色はテーマで変えない。
+  意味を持つ色なので全テーマで同じにしてある
+- シンタックスハイライトの配色は明るい背景用と暗い背景用の 2 種類。`applyTheme` が
+  `<html data-tone="light|dark">` を付け、カスタムは基調色の明暗（`color-scheme`）で決める。
+  `index.html` の先頭スクリプトも同じ判定で付ける
 
 ### タスクトレイ
 

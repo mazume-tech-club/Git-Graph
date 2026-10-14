@@ -58,9 +58,16 @@ function resolve(theme: ThemeSettings, systemDark: boolean): Resolved {
   }
 }
 
+/** 背景が明るいか暗いか。シンタックスハイライトの配色を選ぶのに使う */
+function toneOf(resolved: Resolved): "light" | "dark" {
+  if (resolved.attr !== "custom") return resolved.attr;
+  return resolved.vars["color-scheme"] === "light" ? "light" : "dark";
+}
+
 function paint(resolved: Resolved): void {
   const root = document.documentElement;
   root.setAttribute("data-theme", resolved.attr);
+  root.setAttribute("data-tone", toneOf(resolved));
   for (const name of PALETTE_KEYS) {
     const value = resolved.vars[name];
     if (value === undefined) {

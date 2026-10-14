@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { fileDiff } from "../api";
-import { blockStarts, splitRows } from "../diffRows";
+import { blockStarts, intralineRanges, splitRows, type Range } from "../diffRows";
+import {
+  buildHighlight,
+  languageFor,
+  segmentsFor,
+  type Highlight,
+  type Segment,
+} from "../highlight";
 import type { DiffHunk, DiffLine, FileDiff } from "../types";
 import { FileCounts, STATUS_LABEL, type DiffComparison } from "./DiffPane";
 
@@ -58,6 +65,8 @@ export function DiffViewer({
   const [wrap, setWrap] = useState(readWrap);
   const [fullFile, setFullFile] = useState(false);
   const [diff, setDiff] = useState<FileDiff | null>(null);
+  /** シンタックスハイライト。対応していない言語や大きすぎるファイルでは null のまま */
+  const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   /** 前後の変更箇所へ移動するときにスクロールさせる要素 */
@@ -84,6 +93,7 @@ export function DiffViewer({
   const oldPath = change?.oldPath ?? null;
   useEffect(() => {
     setDiff(null);
+    setHighlight(null);
     setError(null);
     if (!inSummary) return;
     let cancelled = false;
@@ -111,6 +121,27 @@ export function DiffViewer({
       window.clearInterval(id);
     };
   }, [repoPath, from, to, file, oldPath, fullFile, active, inSummary]);
+
+  // 色は変更前後のファイル全体に付ける。全体表示ならそのまま使い、そうでなければ別に取る。
+  // 差分を取り直すたびに付け直すので、自動更新で中身が変わっても追従する
+  const language = languageFor(file);
+  useEffect(() => {
+    if (!diff || diff.isBinary || diff.hunks.length === 0 || !language) return;
+    let cancelled = false;
+    const full = fullFile ? Promise.resolve(diff) : fileDiff(repoPath, from, to, file, oldPath, true);
+    full
+      .then((d) => {
+        if (cancelled) return;
+        // 上限で打ち切ったファイルは全文が揃わないので色を付けない
+        setHighlight(d.truncated ? null : buildHighlight(d, language));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // diff が変わったときだけ付け直す。ほかの値が変わるときは diff も取り直される
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diff, language]);
 
   const prevFile = index > 0 ? files[index - 1] : index < 0 ? files[files.length - 1] : null;
   const nextFile = index < 0 ? files[0] : (files[index + 1] ?? null);
@@ -251,6 +282,7 @@ export function DiffViewer({
         inSummary={inSummary}
         renamed={oldPath !== null}
         diff={diff}
+        highlight={highlight}
         error={error}
         mode={mode}
         wrap={wrap}
@@ -268,6 +300,7 @@ type BodyProps = {
   /** 改名・複製か。内容に差が無いときの文言を変える */
   renamed: boolean;
   diff: FileDiff | null;
+  highlight: Highlight | null;
   error: string | null;
   mode: Mode;
   wrap: boolean;
@@ -281,6 +314,7 @@ function ViewerBody({
   inSummary,
   renamed,
   diff,
+  highlight,
   error,
   mode,
   wrap,
@@ -313,6 +347,7 @@ function ViewerBody({
     return (
       <SplitScrolled
         hunks={diff.hunks}
+        highlight={highlight}
         showHeader={showHeader}
         scrollerRef={scrollerRef}
         footer={truncated}
@@ -326,7 +361,11 @@ function ViewerBody({
         {diff.hunks.map((hunk, i) => (
           <div key={`${hunk.header}-${i}`}>
             {showHeader && <div className="hunk-header">{hunk.header}</div>}
-            {mode === "split" ? <SplitWrapped hunk={hunk} /> : <UnifiedHunk hunk={hunk} />}
+            {mode === "split" ? (
+              <SplitWrapped hunk={hunk} highlight={highlight} />
+            ) : (
+              <UnifiedHunk hunk={hunk} highlight={highlight} />
+            )}
           </div>
         ))}
       </div>
@@ -339,8 +378,50 @@ function sign(line: DiffLine): string {
   return line.kind === "addition" ? "+" : line.kind === "deletion" ? "-" : " ";
 }
 
-function UnifiedHunk({ hunk }: { hunk: DiffHunk }) {
+/**
+ * 行の中身。ハイライトの部品と行内で強調する範囲を重ね、同じ見た目の一続きごとに span にする。
+ * どちらも無ければ文字列のまま返す。
+ */
+function CodeText({
+  text,
+  segments,
+  ranges,
+}: {
+  text: string;
+  segments: Segment[] | undefined;
+  ranges: Range[] | undefined;
+}) {
+  if (!segments && !ranges) return <>{text}</>;
+  const parts = segments ?? [{ text, cls: "" }];
+  const marks = ranges ?? [];
+  const pieces: React.ReactNode[] = [];
+  let offset = 0;
+  let r = 0;
+  for (const part of parts) {
+    let start = 0;
+    while (start < part.text.length) {
+      const at = offset + start;
+      while (r < marks.length && marks[r][1] <= at) r += 1;
+      const inMark = r < marks.length && marks[r][0] <= at;
+      // 次に見た目が変わる位置（部品の終わりか、強調の始まり・終わり）まで切り出す
+      const boundary = inMark ? marks[r][1] : r < marks.length ? marks[r][0] : Infinity;
+      const end = Math.min(part.text.length, boundary - offset);
+      const className = [part.cls, inMark ? "diff-word" : ""].filter(Boolean).join(" ");
+      pieces.push(
+        <span key={pieces.length} className={className || undefined}>
+          {part.text.slice(start, end)}
+        </span>,
+      );
+      start = end;
+    }
+    offset += part.text.length;
+  }
+  return <>{pieces}</>;
+}
+
+function UnifiedHunk({ hunk, highlight }: { hunk: DiffHunk; highlight: Highlight | null }) {
   const starts = useMemo(() => blockStarts(hunk.lines), [hunk.lines]);
+  const ranges = useMemo(() => intralineRanges(hunk.lines), [hunk.lines]);
   return (
     <>
       {hunk.lines.map((line, j) => (
@@ -350,7 +431,13 @@ function UnifiedHunk({ hunk }: { hunk: DiffHunk }) {
             <span className="lineno">{line.newLineno ?? ""}</span>
             <span className="sign">{sign(line)}</span>
           </span>
-          <span className="code">{line.content}</span>
+          <span className="code">
+            <CodeText
+              text={line.content}
+              segments={segmentsFor(line, highlight)}
+              ranges={ranges[j]}
+            />
+          </span>
         </div>
       ))}
     </>
@@ -362,10 +449,14 @@ function SideLine({
   line,
   side,
   change,
+  highlight,
+  ranges,
 }: {
   line: DiffLine | null;
   side: "old" | "new";
   change?: boolean;
+  highlight: Highlight | null;
+  ranges: Range[] | undefined;
 }) {
   if (!line) {
     return (
@@ -384,23 +475,68 @@ function SideLine({
         <span className="lineno">{side === "old" ? line.oldLineno : line.newLineno}</span>
         <span className="sign">{sign(line)}</span>
       </span>
-      <span className="code">{line.content}</span>
+      <span className="code">
+        <CodeText text={line.content} segments={segmentsFor(line, highlight)} ranges={ranges} />
+      </span>
     </div>
   );
 }
 
+/** 左右に並べた行と、それぞれの行内で強調する範囲 */
+function useSplitRows(hunk: DiffHunk) {
+  return useMemo(() => {
+    const ranges = intralineRanges(hunk.lines);
+    const byLine = new Map(hunk.lines.map((line, i) => [line, ranges[i]]));
+    return splitRows(hunk.lines).map((row) => ({
+      ...row,
+      leftRanges: row.left && row.left.kind !== "context" ? byLine.get(row.left) : undefined,
+      rightRanges: row.right && row.right.kind !== "context" ? byLine.get(row.right) : undefined,
+    }));
+  }, [hunk.lines]);
+}
+
 /** 折り返すときの左右表示。行ごとに左右を並べ、高さは長い方に揃う */
-function SplitWrapped({ hunk }: { hunk: DiffHunk }) {
-  const rows = useMemo(() => splitRows(hunk.lines), [hunk.lines]);
+function SplitWrapped({ hunk, highlight }: { hunk: DiffHunk; highlight: Highlight | null }) {
+  const rows = useSplitRows(hunk);
   return (
     <>
       {rows.map((row, j) => (
         <div className="split-row" key={j} data-change={row.blockStart || undefined}>
-          <SideLine line={row.left} side="old" />
-          <SideLine line={row.right} side="new" />
+          <SideLine line={row.left} side="old" highlight={highlight} ranges={row.leftRanges} />
+          <SideLine line={row.right} side="new" highlight={highlight} ranges={row.rightRanges} />
         </div>
       ))}
     </>
+  );
+}
+
+/** 折り返さない左右表示の片側。ハンクごとに左右の組み立てを使い回す */
+function SplitSide({
+  hunk,
+  which,
+  showHeader,
+  highlight,
+}: {
+  hunk: DiffHunk;
+  which: "old" | "new";
+  showHeader: boolean;
+  highlight: Highlight | null;
+}) {
+  const rows = useSplitRows(hunk);
+  return (
+    <div>
+      {showHeader && <div className="hunk-header">{hunk.header}</div>}
+      {rows.map((row, j) => (
+        <SideLine
+          key={j}
+          line={which === "old" ? row.left : row.right}
+          side={which}
+          change={row.blockStart}
+          highlight={highlight}
+          ranges={which === "old" ? row.leftRanges : row.rightRanges}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -410,16 +546,17 @@ function SplitWrapped({ hunk }: { hunk: DiffHunk }) {
  */
 function SplitScrolled({
   hunks,
+  highlight,
   showHeader,
   scrollerRef,
   footer,
 }: {
   hunks: DiffHunk[];
+  highlight: Highlight | null;
   showHeader: boolean;
   scrollerRef: React.RefObject<HTMLDivElement | null>;
   footer: React.ReactNode;
 }) {
-  const rows = useMemo(() => hunks.map((h) => splitRows(h.lines)), [hunks]);
   const rightRef = useRef<HTMLDivElement>(null);
   /** こちらから動かしたことで起きるスクロールイベント。打ち返すと位置が戻されるので無視する */
   const echo = useRef({ left: false, right: false });
@@ -442,17 +579,13 @@ function SplitScrolled({
   const side = (which: "old" | "new") => (
     <div className="viewer-lines">
       {hunks.map((hunk, i) => (
-        <div key={`${hunk.header}-${i}`}>
-          {showHeader && <div className="hunk-header">{hunk.header}</div>}
-          {rows[i].map((row, j) => (
-            <SideLine
-              key={j}
-              line={which === "old" ? row.left : row.right}
-              side={which}
-              change={row.blockStart}
-            />
-          ))}
-        </div>
+        <SplitSide
+          key={`${hunk.header}-${i}`}
+          hunk={hunk}
+          which={which}
+          showHeader={showHeader}
+          highlight={highlight}
+        />
       ))}
     </div>
   );

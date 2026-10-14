@@ -15,6 +15,9 @@
           var root = document.documentElement;
           root.setAttribute("data-theme", cached.attr);
           var vars = cached.vars || {};
+          // src/theme.ts の toneOf と同じ。シンタックスハイライトの配色を選ぶ
+          var tone = cached.attr === "custom" ? vars["color-scheme"] : cached.attr;
+          root.setAttribute("data-tone", tone === "light" ? "light" : "dark");
           for (var name in vars) root.style.setProperty(name, vars[name]);
         } catch (e) {
           // 読めなければ CSS の既定（OS 追従）のまま

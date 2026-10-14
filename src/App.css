@@ -16,6 +16,20 @@
   /* 差分の追加・削除の背景。意味を持つ色なので全テーマで同じにする */
   --diff-add-bg: rgb(49 196 141 / 12%);
   --diff-del-bg: rgb(224 85 97 / 12%);
+  /* 行の中で実際に変わった部分 */
+  --diff-add-word: rgb(49 196 141 / 38%);
+  --diff-del-word: rgb(224 85 97 / 38%);
+  /* シンタックスハイライト。明るい背景用は data-tone="light" で差し替える */
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-comment: #8b949e;
+  --hl-number: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-type: #ffa657;
+  --hl-attr: #79c0ff;
+  --hl-tag: #7ee787;
+  --hl-variable: #ffa657;
+  --hl-meta: #8b949e;
 
   font-family: "Segoe UI", "Yu Gothic UI", system-ui, sans-serif;
   font-size: 13px;
@@ -33,8 +47,35 @@
   color-scheme: light;
 }
 
+/*
+ * ハイライトの配色は背景の明暗で 2 種類。カスタムテーマも基調色の明暗で
+ * どちらかを使う（data-tone は src/theme.ts が付ける）
+ */
+:root[data-tone="light"] {
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-comment: #6e7781;
+  --hl-number: #0550ae;
+  --hl-title: #8250df;
+  --hl-type: #953800;
+  --hl-attr: #0550ae;
+  --hl-tag: #116329;
+  --hl-variable: #953800;
+  --hl-meta: #6e7781;
+}
+
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
+    --hl-keyword: #cf222e;
+    --hl-string: #0a3069;
+    --hl-comment: #6e7781;
+    --hl-number: #0550ae;
+    --hl-title: #8250df;
+    --hl-type: #953800;
+    --hl-attr: #0550ae;
+    --hl-tag: #116329;
+    --hl-variable: #953800;
+    --hl-meta: #6e7781;
     --bg: #ffffff;
     --bg-elevated: #f5f6f8;
     --bg-hover: #eef0f4;
@@ -1369,7 +1410,9 @@ dialog.settings.help {
   opacity: 0.5;
 }
 
-.viewer-group button.active {
+/* ホバーの背景より優先する（選択中の文字が背景に溶けないように） */
+.viewer-group button.active,
+.viewer-group button.active:hover:not(:disabled) {
   color: #fff;
   background: var(--accent);
   border-color: var(--accent);
@@ -1523,6 +1566,89 @@ dialog.settings.help {
 .diff-line .code {
   flex: 1 0 auto;
   padding-right: 8px;
+}
+
+.diff-line.addition .diff-word {
+  background: var(--diff-add-word);
+  border-radius: 2px;
+}
+
+.diff-line.deletion .diff-word {
+  background: var(--diff-del-word);
+  border-radius: 2px;
+}
+
+/* ---- シンタックスハイライト（highlight.js のクラス） ---- */
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag,
+.hljs-template-tag {
+  color: var(--hl-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-char,
+.hljs-link {
+  color: var(--hl-string);
+}
+
+.hljs-comment,
+.hljs-quote {
+  font-style: italic;
+  color: var(--hl-comment);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--hl-number);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--hl-title);
+}
+
+.hljs-type,
+.hljs-built_in,
+.hljs-class {
+  color: var(--hl-type);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: var(--hl-attr);
+}
+
+.hljs-tag,
+.hljs-name {
+  color: var(--hl-tag);
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params {
+  color: var(--hl-variable);
+}
+
+.hljs-meta {
+  color: var(--hl-meta);
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+.hljs-emphasis {
+  font-style: italic;
 }
 
 .viewer-body.wrap .diff-line .code {
