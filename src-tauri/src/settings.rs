@@ -1,7 +1,7 @@
 //! アプリの設定ファイル。
 //!
 //! テーマなど「消えると困る」設定を JSON で保存する。保存先はアプリの設定ディレクトリ
-//! （Windows では `%APPDATA%\com.example.gitgraph\settings.json`）。
+//! （Windows では `%APPDATA%\<identifier>\settings.json`）。
 //! サイドバー幅のような軽い UI 状態は localStorage のままで、ここには入れない。
 
 use std::path::{Path, PathBuf};

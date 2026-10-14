@@ -15,8 +15,8 @@ type Props = {
   onClose: () => void;
 };
 
-/** リリース一覧。自動更新の配信元と同じ Gitea */
-const RELEASES_URL = "http://git.example.com/example-org/Git-Graph/releases";
+/** リリース一覧。自動更新の配信元と同じ Gitea。社内の設定が無いビルドでは出さない */
+const RELEASES_URL = __RELEASES_URL__;
 
 type UpdateState =
   | { kind: "idle" }
@@ -116,11 +116,17 @@ export function HelpDialog({ open, onClose }: Props) {
             <pre className="help-notes">{update.info.notes}</pre>
           )}
 
-          <div className="help-links">
-            <button type="button" className="link" onClick={() => void openExternal(RELEASES_URL)}>
-              リリース一覧を開く
-            </button>
-          </div>
+          {RELEASES_URL && (
+            <div className="help-links">
+              <button
+                type="button"
+                className="link"
+                onClick={() => void openExternal(RELEASES_URL)}
+              >
+                リリース一覧を開く
+              </button>
+            </div>
+          )}
         </fieldset>
 
         <fieldset className="settings-group">

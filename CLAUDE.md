@@ -8,6 +8,10 @@ Tauri v2 + React + TypeScript、バックエンドは Rust の libgit2（git2 �
 
 ## 基本方針
 
+- **社内の値（identifier・Gitea の URL・組織名）を Git に入れない。** GitHub に公開するため。
+  実際の値は Git の管理外の `src-tauri/tauri.windows.conf.json`（Windows でのビルド時に
+  Tauri が自動で重ねる）と `CLAUDE.local.md` にある。詳しくは「社内の値の置き場所」
+
 - **読み取り専用**。唯一の例外はブランチのメモ（`branch.<name>.description`）で、
   これもリポジトリ配下の `.git/config` に書くだけで履歴には触れない。
 - **仕様の正は Rust 側**。ブラウザプレビュー用の開発 API（`scripts/dev-git-api.mjs`）は
@@ -266,7 +270,7 @@ src/api.ts ──┬─ Tauri あり → invoke() → src-tauri/src/lib.rs → s
 ### 設定ファイル
 
 `src-tauri/src/settings.rs`。保存先は Tauri の `app_config_dir()`
-（Windows では `%APPDATA%\com.example.gitgraph\settings.json`）。
+（Windows では `%APPDATA%\<identifier>\settings.json`。identifier は次節の社内の値）。
 
 - 「消えると困る」設定（テーマ、今後の登録リポジトリ・マージ基準）はここに入れる。
   サイドバー幅や前回のリポジトリのような軽い UI 状態は localStorage のまま
@@ -326,7 +330,7 @@ v1.2.x 以前は既定の `currentUser`（`%LOCALAPPDATA%\Git Graph`）に入っ
 `tauri-plugin-updater` を使い、Gitea のリリースから新しい版を取得する。
 
 - 更新情報は main ブランチの `latest.json`。raw URL で配信するのでタグに依存しない
-  （`http://git.example.com/example-org/Git-Graph/raw/branch/main/latest.json`）
+  （URL は `tauri.windows.conf.json` の `plugins.updater.endpoints`）
 - 署名検証は必須。公開鍵は `tauri.conf.json` の `plugins.updater.pubkey`
 - **秘密鍵は `~/.tauri/git-graph-updater.key`。リポジトリには入っていない**。
   失うと以降の更新を配信できなくなるのでバックアップすること
@@ -340,8 +344,29 @@ v1.2.x 以前は既定の `currentUser`（`%LOCALAPPDATA%\Git Graph`）に入っ
   この指定が無いと updater は起動時に panic する（ビルドは通るので気付きにくい）。
   インストーラは署名検証されるため任意コードの注入はできないが、経路上の攻撃者は
   更新の阻止と古い版への誘導ができる。Gitea を HTTPS 化したらこの指定は外すこと。
-- 組織 `example-org` を public にしたことで匿名取得できる。internal のままだと
+- Gitea の組織を public にしたことで匿名取得できる。internal のままだと
   認証が必要になり、トークンをアプリに埋め込む羽目になるので戻してはいけない
+
+### 社内の値の置き場所
+
+GitHub に公開するため、社内の値はリポジトリに入れない。
+
+| 値 | 置き場所 |
+|----|---------|
+| identifier、更新の確認先 URL | `src-tauri/tauri.windows.conf.json`（Git の管理外。見本は `tauri.windows.conf.example.json`） |
+| Gitea の URL・組織名・tea のログイン名 | `CLAUDE.local.md`（Git の管理外） |
+
+- `tauri.conf.json` の identifier と確認先はダミー（`com.example.gitgraph` / `git.example.com`）。
+  Windows でビルドすると Tauri が `tauri.windows.conf.json` を自動で重ねるので、実際の値になる。
+  コンテナ（Linux）でのビルドはダミーのまま（表示確認には困らない）
+- **identifier は変えてはいけない。** 設定ファイルの保存先とインストール先の識別に使われ、
+  変えると別アプリとして並んで入り、既存の利用者の設定も引き継がれない
+- `tauri.windows.conf.json` が無いまま Windows でリリース用にビルドすると `build.rs` が止める。
+  ダミーの identifier で配ってしまうのを防ぐため
+- ヘルプのリリース一覧 URL（`__RELEASES_URL__`）と `make-latest-json.mjs` の配信元は、
+  確認先 URL から作る（`vite.config.ts` / スクリプトが読む）。無ければリンクを出さない
+- 例外は Gitea の main にある `latest.json`。インストール済みのアプリがここを見に来るので
+  消せない。GitHub へは公開用スクリプトが取り除いて送る（「GitHub への公開」）
 
 ## 落とし穴
 
@@ -361,7 +386,8 @@ v1.2.x 以前は既定の `currentUser`（`%LOCALAPPDATA%\Git Graph`）に入っ
 ## リリース手順
 
 Gitea（`gitea` リモート）に公開している。自動更新のため組織ごと public にしてあり、
-匿名でリリース資産を取得できる。GitHub（`origin`）にも同じソースがある。
+匿名でリリース資産を取得できる。GitHub には社内の値を取り除いた履歴を別に送る（後述）。
+実際のリポジトリ名・ログイン名は `CLAUDE.local.md` を見ること。
 
 ```powershell
 # 1. バージョンを更新（package.json / package-lock.json / Cargo.toml / tauri.conf.json）
@@ -375,7 +401,7 @@ git tag -a v1.2.0 -F <メッセージファイル>
 git push gitea main; git push gitea v1.2.0
 
 # 4. リリース作成（tea CLI）
-tea releases create --login example --repo example-org/Git-Graph --tag v1.2.0 --title "..." --note-file <本文> --asset "src-tauri/target/release/bundle/nsis/Git Graph_1.2.0_x64-setup.exe"
+tea releases create --login <ログイン名> --repo <組織>/Git-Graph --tag v1.2.0 --title "..." --note-file <本文> --asset "src-tauri/target/release/bundle/nsis/Git Graph_1.2.0_x64-setup.exe"
 
 # 5. 更新情報を作って push。これをしないと既存の利用者に更新が届かない
 node scripts/make-latest-json.mjs 1.2.0 <本文>

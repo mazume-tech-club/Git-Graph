@@ -25,3 +25,8 @@ dist-ssr
 
 # 動作確認で撮ったスクリーンショット
 screenshot*.png
+
+# 社内の値（identifier・配信元）。見本は src-tauri/tauri.windows.conf.example.json
+src-tauri/tauri.windows.conf.json
+# 社内向けの作業メモ（配信元の URL など）
+CLAUDE.local.md

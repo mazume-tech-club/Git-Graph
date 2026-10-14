@@ -10,7 +10,21 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const REPO_URL = "http://git.example.com/example-org/Git-Graph";
+/**
+ * 配信元のリポジトリ URL。社内の値は Git に入れていない
+ * src-tauri/tauri.windows.conf.json の更新の確認先から作る
+ */
+const PRIVATE_CONF = "src-tauri/tauri.windows.conf.json";
+if (!existsSync(PRIVATE_CONF)) {
+  console.error(`${PRIVATE_CONF} がありません（tauri.windows.conf.example.json を参照）。`);
+  process.exit(1);
+}
+const ENDPOINT = JSON.parse(readFileSync(PRIVATE_CONF, "utf8")).plugins?.updater?.endpoints?.[0];
+const REPO_URL = ENDPOINT?.replace(/\/raw\/branch\/[^/]+\/latest\.json$/, "");
+if (!REPO_URL || REPO_URL === ENDPOINT) {
+  console.error(`${PRIVATE_CONF} の plugins.updater.endpoints から配信元を読めません。`);
+  process.exit(1);
+}
 /** CARGO_TARGET_DIR を設定している環境ではビルド成果物がそちらに出る */
 const TARGET_DIR = process.env.CARGO_TARGET_DIR || "src-tauri/target";
 const BUNDLE_DIR = join(TARGET_DIR, "release/bundle/nsis");

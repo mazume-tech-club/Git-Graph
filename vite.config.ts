@@ -4,14 +4,29 @@ import react from "@vitejs/plugin-react";
 import { gitApiMiddleware } from "./scripts/dev-git-api.mjs";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
+// @ts-expect-error type error without @types/node package
+import { existsSync, readFileSync } from "node:fs";
 import pkg from "./package.json";
 const host = process.env.TAURI_DEV_HOST;
+
+/**
+ * ヘルプに出すリリース一覧の URL。社内の値は Git に入れていない
+ * src-tauri/tauri.windows.conf.json の更新の配信元から作る。無ければ null（リンクを出さない）
+ */
+function releasesUrl(): string | null {
+  const path = "src-tauri/tauri.windows.conf.json";
+  if (!existsSync(path)) return null;
+  const endpoint: string | undefined = JSON.parse(readFileSync(path, "utf8")).plugins?.updater
+    ?.endpoints?.[0];
+  return endpoint ? endpoint.replace(/\/raw\/branch\/[^/]+\/latest\.json$/, "/releases") : null;
+}
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
   // ブラウザプレビューでヘルプに出すバージョン。Tauri では実行ファイルの版を使う
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __RELEASES_URL__: JSON.stringify(releasesUrl()),
   },
 
   plugins: [
