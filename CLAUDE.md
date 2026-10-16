@@ -435,6 +435,19 @@ GitHub（`origin`）は public。社内の値を含む Gitea の履歴をその�
   ローカルの main は社内の値を含む履歴なので、そのまま送ると公開されてしまう
 - コミットメッセージにも社内の値を書かない（置き換えはされるが、書かないのが原則）
 
+### GitHub のリリース（公開用の exe）
+
+社内版の exe は identifier と Gitea の URL を含むので、GitHub のリリースには付けない。
+GitHub 用には、**GitHub から取った公開用のソース**（社内の値が入っていない）でビルドした
+別の exe を付ける。
+
+- identifier はダミー（`com.example.gitgraph`）なので、社内版とは別のアプリとして入る。
+  自動更新の確認先もダミーなので更新は届かない（失敗は黙って無視される）
+- `tauri.windows.conf.json` が無いので `build.rs` が止める。`GIT_GRAPH_PUBLIC_BUILD=1` で通す
+- `CARGO_TARGET_DIR` は社内版と分ける。同じだと社内版の成果物（`.sig` を含む）を上書きする
+- 更新用の署名は作らない（`--config` で `createUpdaterArtifacts` を false にする）
+- 付ける前に exe とインストーラを `example`（ASCII と UTF-16 の両方）で検索し、0 件を確かめる
+
 ホストのビルドが `failed to read plugin permissions: ... permissions\ask.toml` で落ちるときは、
 `~/.cargo/registry/src` の展開済みソースが消えている（コンパイル済み成果物は残るので
 依存のビルド自体は進み、Tauri のビルドスクリプトだけが失敗する）。
