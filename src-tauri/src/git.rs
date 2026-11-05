@@ -1098,13 +1098,23 @@ fn change_count(repo: &Repository) -> Result<usize, String> {
     if repo.is_bare() {
         return Ok(0);
     }
+    // index の stat キャッシュは書き戻す（`git status` と同じ振る舞い）。
+    // 別 PC からコピーした直後などは全ファイルの stat が index と食い違っており、
+    // 書き戻さないと呼ぶたびに全ファイルをハッシュし直して CPU を使い切るため。
+    // index がロック中などで書けないときは、書き戻さずに数えるだけにする。
+    match count_statuses(repo, true) {
+        Ok(count) => Ok(count),
+        Err(_) => count_statuses(repo, false),
+    }
+}
+
+fn count_statuses(repo: &Repository, update_index: bool) -> Result<usize, String> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(false)
         .include_ignored(false)
         .exclude_submodules(true)
-        // 読み取り専用アプリなので index のキャッシュは書き戻さない
-        .update_index(false);
+        .update_index(update_index);
     let statuses = repo
         .statuses(Some(&mut opts))
         .map_err(|e| e.message().to_string())?;
@@ -2142,6 +2152,32 @@ mod tests {
         let count = worktree_change_count(&path).unwrap();
         assert_eq!(count, 3);
         assert_eq!(count, diff_summary(&path, None, None).unwrap().files.len());
+    }
+
+    #[test]
+    fn worktree_change_count_refreshes_index_stat_cache() {
+        let dir = file_fixture();
+        let path = path_of(&dir);
+
+        // 別 PC からコピーした直後のように、内容は同じまま mtime だけ index と食い違わせる。
+        // 十分に古い時刻にして、index より新しい（racy）扱いにならないようにする
+        let stale_secs = 1_700_000_000;
+        let stale = std::time::UNIX_EPOCH + std::time::Duration::from_secs(stale_secs);
+        std::fs::File::options()
+            .write(true)
+            .open(dir.path().join("c.txt"))
+            .unwrap()
+            .set_modified(stale)
+            .unwrap();
+
+        // 内容は変わっていないので変更 0 件
+        assert_eq!(worktree_change_count(&path).unwrap(), 0);
+
+        // 次回以降ハッシュし直さないよう、index の stat 情報がファイルに合わせて書き戻されていること
+        let repo = Repository::open(dir.path()).unwrap();
+        let index = repo.index().unwrap();
+        let entry = index.get_path(std::path::Path::new("c.txt"), 0).unwrap();
+        assert_eq!(i64::from(entry.mtime.seconds()), stale_secs as i64);
     }
 
     #[test]

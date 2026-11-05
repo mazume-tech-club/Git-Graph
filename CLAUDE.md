@@ -12,8 +12,12 @@ Tauri v2 + React + TypeScript、バックエンドは Rust の libgit2（git2 �
   実際の値は Git の管理外の `src-tauri/tauri.windows.conf.json`（Windows でのビルド時に
   Tauri が自動で重ねる）と `CLAUDE.local.md` にある。詳しくは「社内の値の置き場所」
 
-- **読み取り専用**。唯一の例外はブランチのメモ（`branch.<name>.description`）で、
-  これもリポジトリ配下の `.git/config` に書くだけで履歴には触れない。
+- **読み取り専用**。例外は 2 つだけで、どちらも履歴には触れない。
+  - ブランチのメモ（`branch.<name>.description`）。リポジトリ配下の `.git/config` に書く。
+  - 変更件数を数えるとき（`change_count`）、`git status` と同じく index の stat キャッシュを
+    書き戻す。別 PC からコピーした直後などは全ファイルの stat が index と食い違っており、
+    書き戻さないと呼ぶたびに全ファイルをハッシュし直して CPU を使い切り、
+    「読み込み中」のまま何十分も固まる。index が書けなければ書き戻さずに数えるだけにする。
 - **仕様の正は Rust 側**。ブラウザプレビュー用の開発 API（`scripts/dev-git-api.mjs`）は
   `git` コマンドを呼ぶ簡易版で、並び順など細部が異なる。食い違ったら Rust を信じる。
 - **UI の文言・コメントは日本語**。コミットメッセージも日本語。
